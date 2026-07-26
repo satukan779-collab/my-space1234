@@ -1,0 +1,2039 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bs111 — G-Store</title>
+<style>
+
+  /* ============================================================
+     Bs111 G-STORE — 3D game/site launcher
+     ------------------------------------------------------------
+     TO ADD A NEW GAME OR WEBSITE:
+     Go to the <script> block at the bottom, find the ITEMS array,
+     and add a line like:
+
+     { name:"Chess", url:"https://chess.com", img:fav("chess.com"), desc:"Play chess online", cat:"Board Games" }
+
+     A new 3D tile appears automatically in the grid — click it to
+     open the info panel, click Play to launch it.
+     ============================================================ */
+
+  :root{
+    --bg:        #0a0c11;
+    --panel:     #171a21;
+    --panel-2:   #1e222b;
+    --line:      #2a2f3a;
+    --cyan:      #00c2cb;
+    --magenta:   #ff3d78;
+    --amber:     #ffb238;
+    --ink:       #f2f4f8;
+    --muted:     #8890a0;
+  }
+
+  html[data-theme="light"]{
+    --bg:      #eef1f7;
+    --panel:   #ffffff;
+    --panel-2: #f3f5fa;
+    --line:    #dde2ea;
+    --ink:     #14161c;
+    --muted:   #5b6472;
+  }
+
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html{ scroll-behavior:smooth; }
+  html,body{ height:100%; }
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:'Segoe UI', 'Chakra Petch', system-ui, sans-serif;
+    overflow-x:hidden;
+    perspective:1400px;
+  }
+
+  /* -------------------- depth-parallax starfield -------------------- */
+  #depthCanvas{
+    position:fixed; inset:0; z-index:0;
+    pointer-events:none;
+    opacity:.85;
+  }
+
+  /* -------------------- top bar -------------------- */
+  .topbar{
+    position:sticky; top:0; z-index:50;
+    display:flex; align-items:center; gap:18px;
+    padding:12px 22px;
+    background:rgba(23,26,33,.9);
+    backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--line);
+  }
+  .logo{
+    display:flex; align-items:center; gap:10px;
+    font-weight:800; font-size:1.25rem; letter-spacing:.02em;
+    flex-shrink:0; cursor:pointer;
+  }
+  .logo .dot{
+    width:10px;height:10px;border-radius:50%;
+    background:var(--cyan); box-shadow:0 0 10px var(--cyan);
+    animation:pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse{ 0%,100%{opacity:1;transform:scale(1);} 50%{opacity:.4;transform:scale(1.3);} }
+
+  .navtabs{ display:flex; gap:4px; }
+  .navtab{
+    padding:8px 16px; border-radius:8px; cursor:pointer;
+    color:var(--muted); font-weight:600; font-size:.88rem;
+    transition:background .2s, color .2s;
+    user-select:none;
+  }
+  .navtab:hover{ color:var(--ink); background:var(--panel-2); }
+  .navtab.active{ color:var(--cyan); background:var(--panel-2); }
+
+  .search{
+    flex:1; max-width:460px;
+    display:flex; align-items:center;
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:8px 14px;
+    color:var(--muted);
+    gap:8px;
+    transition:border-color .2s;
+  }
+  .search:focus-within{ border-color:var(--cyan); }
+  .search input{
+    background:none; border:none; outline:none;
+    color:var(--ink); font-size:.92rem; width:100%;
+  }
+  .search input::placeholder{ color:var(--muted); }
+
+  .topbar-right{ margin-left:auto; display:flex; align-items:center; gap:14px; color:var(--muted); font-size:.85rem; }
+  .badge{
+    background:var(--panel-2); border:1px solid var(--line);
+    padding:6px 12px; border-radius:20px; font-weight:600;
+    color:var(--amber);
+  }
+
+  /* -------------------- topbar control buttons -------------------- */
+  .icon-btn{
+    width:36px; height:36px; border-radius:9px;
+    background:var(--panel-2); border:1px solid var(--line);
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer; color:var(--muted); font-size:1rem;
+    transition:color .2s, border-color .2s, transform .2s;
+    position:relative; flex-shrink:0;
+  }
+  .icon-btn:hover{ color:var(--ink); border-color:var(--cyan); transform:translateY(-1px); }
+
+  .accent-dots{ display:flex; gap:6px; align-items:center; }
+  .accent-dot{
+    width:16px; height:16px; border-radius:50%;
+    cursor:pointer; border:2px solid transparent;
+    transition:transform .2s, border-color .2s;
+  }
+  .accent-dot:hover{ transform:scale(1.15); }
+  .accent-dot.active{ border-color:var(--ink); }
+
+  .bell-wrap{ position:relative; }
+  .bell-badge{
+    position:absolute; top:-3px; right:-3px;
+    width:9px; height:9px; border-radius:50%;
+    background:var(--magenta); box-shadow:0 0 6px var(--magenta);
+    animation:pulse 1.8s ease-in-out infinite;
+  }
+  .bell-panel{
+    position:absolute; top:46px; right:0; z-index:80;
+    width:290px;
+    background:var(--panel); border:1px solid var(--line); border-radius:14px;
+    box-shadow:0 20px 40px rgba(0,0,0,.35);
+    padding:16px;
+    opacity:0; pointer-events:none;
+    transform:translateY(-8px) scale(.96);
+    transform-origin:top right;
+    transition:opacity .2s ease, transform .2s ease;
+  }
+  .bell-panel.show{ opacity:1; pointer-events:auto; transform:translateY(0) scale(1); }
+  .bell-panel h4{ font-size:.92rem; margin-bottom:10px; }
+  .roadmap-item{
+    display:flex; gap:10px; align-items:flex-start;
+    padding:8px 0; border-top:1px solid var(--line);
+    font-size:.82rem; line-height:1.4;
+  }
+  .roadmap-item:first-of-type{ border-top:none; }
+  .roadmap-item .tag{
+    flex-shrink:0; font-size:.62rem; font-weight:800; padding:2px 7px;
+    border-radius:20px; margin-top:1px;
+  }
+  .roadmap-item .tag.new{ background:rgba(0,194,203,.18); color:var(--cyan); }
+  .roadmap-item .tag.soon{ background:rgba(255,178,56,.14); color:var(--amber); }
+  .roadmap-item span.txt{ color:var(--muted); }
+
+  /* -------------------- sort + surprise controls -------------------- */
+  .controls-row{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .sort-select{
+    background:var(--panel-2); color:var(--ink); border:1px solid var(--line);
+    border-radius:8px; padding:7px 10px; font-size:.8rem; font-weight:600;
+    cursor:pointer; outline:none;
+  }
+  .sort-select:hover{ border-color:var(--cyan); }
+  .surprise-btn{
+    background:var(--panel-2); border:1px solid var(--line); color:var(--ink);
+    padding:7px 14px; border-radius:8px; font-size:.8rem; font-weight:700;
+    cursor:pointer; transition:.2s;
+  }
+  .surprise-btn:hover{ border-color:var(--magenta); color:var(--magenta); transform:translateY(-1px); }
+
+  /* -------------------- favorite star on tile -------------------- */
+  .tile{ position:relative; }
+  .tile-star{
+    position:absolute; top:8px; right:8px; z-index:3;
+    width:28px; height:28px; border-radius:50%;
+    background:rgba(10,12,16,.55); backdrop-filter:blur(3px);
+    display:flex; align-items:center; justify-content:center;
+    font-size:.95rem; color:var(--muted); cursor:pointer;
+    transition:transform .2s ease, color .2s ease, background .2s ease;
+    transform:translateZ(30px);
+  }
+  .tile-star:hover{ transform:translateZ(30px) scale(1.15); }
+  .tile-star.active{ color:var(--amber); background:rgba(10,12,16,.75); }
+  .tile-rating{ color:var(--amber); font-size:.68rem; margin-top:2px; }
+
+  .new-badge{
+    position:absolute; top:8px; left:8px; z-index:3;
+    background:linear-gradient(135deg, var(--magenta), #ff7a3d);
+    color:#fff; font-size:.6rem; font-weight:800; letter-spacing:.04em;
+    padding:3px 8px; border-radius:20px;
+    transform:translateZ(30px);
+    box-shadow:0 4px 10px rgba(255,61,120,.35);
+    animation:badgePop .4s ease-out;
+  }
+  @keyframes badgePop{ from{ transform:translateZ(30px) scale(0); } to{ transform:translateZ(30px) scale(1); } }
+
+  .tile.kbd-focus{ outline:2px solid var(--cyan); outline-offset:2px; }
+
+  /* -------------------- continue playing strip -------------------- */
+  .continue-strip{
+    display:flex; gap:14px; overflow-x:auto; padding-bottom:8px; margin-bottom:6px;
+    scrollbar-width:thin;
+  }
+  .continue-strip .tile{ min-width:150px; max-width:150px; flex-shrink:0; }
+
+  /* -------------------- featured today card -------------------- */
+  .featured-card{
+    display:flex; gap:20px; align-items:center; flex-wrap:wrap;
+    background:var(--panel); border:1px solid var(--line); border-radius:14px;
+    padding:18px 20px; margin-bottom:28px;
+    cursor:pointer; transition:border-color .2s, transform .2s;
+  }
+  .featured-card:hover{ border-color:var(--amber); transform:translateY(-2px); }
+  .featured-card img{ width:74px; height:74px; border-radius:12px; object-fit:cover; flex-shrink:0; }
+  .featured-card .f-name{ font-weight:800; font-size:1.05rem; margin-bottom:4px; }
+  .featured-card .f-desc{ color:var(--muted); font-size:.84rem; max-width:480px; }
+  .featured-card .f-cta{
+    margin-left:auto; background:var(--amber); color:#3a2400; font-weight:800;
+    padding:9px 20px; border-radius:8px; font-size:.85rem; flex-shrink:0;
+  }
+
+  /* -------------------- notes textarea -------------------- */
+  .notes-box{ margin-bottom:20px; }
+  .notes-box label{ display:block; font-size:.8rem; color:var(--muted); margin-bottom:6px; }
+  .notes-box textarea{
+    width:100%; min-height:64px; resize:vertical;
+    background:var(--panel-2); border:1px solid var(--line); border-radius:10px;
+    color:var(--ink); font-family:inherit; font-size:.85rem; padding:10px 12px;
+    outline:none; transition:border-color .2s;
+  }
+  .notes-box textarea:focus{ border-color:var(--cyan); }
+  .rating-row{ display:flex; align-items:center; gap:4px; margin-bottom:18px; }
+  .rating-row .rlabel{ color:var(--muted); font-size:.8rem; margin-right:6px; }
+  .rstar{ font-size:1.15rem; color:var(--line); cursor:pointer; transition:color .15s, transform .15s; }
+  .rstar:hover{ transform:scale(1.15); }
+  .rstar.filled{ color:var(--amber); }
+
+  /* -------------------- welcome modal -------------------- */
+  .welcome-card{
+    width:min(460px,100%);
+    background:var(--panel); border:1px solid var(--line); border-radius:20px;
+    padding:40px 32px 32px; text-align:center;
+    transform:rotateX(10deg) scale(.9) translateY(14px);
+    transition:transform .4s cubic-bezier(.2,.9,.3,1.2);
+  }
+  .overlay.show .welcome-card{ transform:rotateX(0) scale(1) translateY(0); }
+  .welcome-icon{
+    width:70px; height:70px; margin:0 auto 18px;
+    border-radius:18px;
+    background:linear-gradient(135deg, rgba(0,194,203,.25), rgba(255,61,120,.2));
+    border:1px solid var(--line);
+    display:flex; align-items:center; justify-content:center;
+    font-size:2rem;
+    animation:floatIcon 3s ease-in-out infinite;
+  }
+  @keyframes floatIcon{ 0%,100%{ transform:translateY(0) rotate(0deg); } 50%{ transform:translateY(-8px) rotate(4deg); } }
+  .welcome-card h2{ font-size:1.4rem; margin-bottom:10px; }
+  .welcome-card h2 span{ color:var(--cyan); }
+  .welcome-card p{ color:var(--muted); font-size:.9rem; line-height:1.6; margin-bottom:26px; }
+  .welcome-go{
+    background:var(--cyan); color:#06272a; font-weight:800; border:none;
+    padding:12px 32px; border-radius:10px; cursor:pointer; font-size:.95rem;
+    transition:background .2s, transform .15s;
+  }
+  .welcome-go:hover{ background:#28e0e8; transform:translateY(-2px); }
+
+  /* -------------------- update toast -------------------- */
+  .toast{
+    position:fixed; bottom:26px; right:26px; z-index:150;
+    width:min(320px, calc(100vw - 40px));
+    background:var(--panel); border:1px solid var(--line); border-radius:14px;
+    padding:16px 18px; box-shadow:0 20px 40px rgba(0,0,0,.4);
+    display:flex; gap:12px; align-items:flex-start;
+    transform:translateX(120%) rotateY(-8deg); opacity:0;
+    transition:transform .5s cubic-bezier(.2,.9,.25,1.1), opacity .4s ease;
+  }
+  .toast.show{ transform:translateX(0) rotateY(0); opacity:1; }
+  .toast .t-icon{ font-size:1.3rem; flex-shrink:0; }
+  .toast .t-title{ font-weight:700; font-size:.86rem; margin-bottom:3px; }
+  .toast .t-body{ color:var(--muted); font-size:.78rem; line-height:1.4; }
+  .toast .t-close{
+    margin-left:auto; cursor:pointer; color:var(--muted); font-size:.9rem; flex-shrink:0;
+  }
+  .toast .t-close:hover{ color:var(--ink); }
+
+  /* -------------------- top slide-down banner alert -------------------- */
+  .top-banner{
+    position:fixed; top:0; left:50%; z-index:160;
+    transform:translate(-50%, -120%);
+    display:flex; align-items:center; gap:10px;
+    background:linear-gradient(90deg, var(--cyan), var(--magenta));
+    color:#06131a; font-weight:700; font-size:.85rem;
+    padding:11px 20px; border-radius:0 0 14px 14px;
+    box-shadow:0 10px 30px rgba(0,0,0,.35);
+    max-width:min(94vw, 640px);
+    transition:transform .55s cubic-bezier(.2,.9,.25,1.15);
+  }
+  .top-banner.show{ transform:translate(-50%, 0); }
+  .tb-icon{ font-size:1.05rem; }
+  .tb-text{ flex:1; min-width:0; }
+  .tb-link{
+    text-decoration:underline; cursor:pointer; white-space:nowrap; flex-shrink:0;
+  }
+  .tb-close{ cursor:pointer; opacity:.75; flex-shrink:0; }
+  .tb-close:hover{ opacity:1; }
+
+  /* -------------------- layout: sidebar + content -------------------- */
+  .layout{ display:flex; min-height:calc(100vh - 57px); position:relative; z-index:1; }
+
+  .sidebar{
+    width:72px; flex-shrink:0;
+    background:rgba(23,26,33,.9);
+    backdrop-filter:blur(10px);
+    border-right:1px solid var(--line);
+    display:flex; flex-direction:column; align-items:center;
+    padding:18px 0; gap:6px;
+  }
+  .side-btn{
+    width:52px; height:52px; border-radius:12px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:3px; color:var(--muted); font-size:.62rem; font-weight:600;
+    cursor:pointer; transition:background .2s, color .2s;
+    user-select:none;
+  }
+  .side-btn svg{ width:20px; height:20px; }
+  .side-btn.active{ background:var(--panel-2); color:var(--cyan); }
+  .side-btn:hover{ background:var(--panel-2); color:var(--ink); }
+
+  .content{ flex:1; padding:26px clamp(16px,3vw,36px) 60px; max-width:1400px; }
+  .view{ display:none; }
+  .view.active{ display:block; animation:viewIn .5s ease-out; }
+  @keyframes viewIn{ from{opacity:0; transform:translateY(10px);} to{opacity:1; transform:translateY(0);} }
+
+  /* -------------------- 3D hero banner -------------------- */
+  .banner{
+    position:relative;
+    border-radius:16px;
+    padding:40px 34px;
+    margin-bottom:32px;
+    display:flex; align-items:center; gap:36px; flex-wrap:wrap;
+    background:
+      radial-gradient(circle at 15% 20%, rgba(0,194,203,.18), transparent 45%),
+      radial-gradient(circle at 85% 80%, rgba(255,61,120,.16), transparent 45%),
+      var(--panel);
+    border:1px solid var(--line);
+    overflow:hidden;
+  }
+  .banner-text{ flex:1; min-width:260px; }
+  .banner .draw-line{
+    display:block; width:min(420px,70%); height:2px; margin-bottom:18px;
+    background:linear-gradient(90deg, transparent, var(--cyan), var(--magenta), transparent);
+    background-size:200% 100%;
+    scale:0 1; transform-origin:left;
+    animation:grow 1s cubic-bezier(.6,0,.2,1) forwards, shimmer 3s linear 1s infinite;
+  }
+  @keyframes grow{ from{scale:0 1;} to{scale:1 1;} }
+  @keyframes shimmer{ 0%{background-position:200% 0;} 100%{background-position:-200% 0;} }
+
+  .banner h1{
+    font-size:clamp(1.5rem,3.4vw,2.3rem); font-weight:800;
+    opacity:0; animation:reveal .8s ease-out .25s forwards;
+  }
+  .banner h1 span{ color:var(--cyan); text-shadow:0 0 20px rgba(0,194,203,.4); }
+  .banner p{
+    margin-top:10px; color:var(--muted); font-size:.95rem;
+    opacity:0; animation:reveal .8s ease-out .5s forwards;
+  }
+  .banner p b{ color:var(--amber); }
+  @keyframes reveal{ from{opacity:0; transform:translateY(10px); filter:blur(5px);} to{opacity:1; transform:translateY(0); filter:blur(0);} }
+
+  /* -------------------- 3D rotating cube signature element -------------------- */
+  .cube-stage{
+    width:150px; height:150px; flex-shrink:0;
+    perspective:700px;
+    opacity:0; animation:reveal .8s ease-out .4s forwards;
+  }
+  .cube{
+    width:100%; height:100%; position:relative;
+    transform-style:preserve-3d;
+    animation:spinCube 14s linear infinite;
+  }
+  @keyframes spinCube{
+    from{ transform:rotateX(0deg) rotateY(0deg); }
+    to{ transform:rotateX(360deg) rotateY(360deg); }
+  }
+  .cube-face{
+    position:absolute; width:150px; height:150px;
+    border:1px solid rgba(0,194,203,.5);
+    background:linear-gradient(135deg, rgba(0,194,203,.16), rgba(255,61,120,.12));
+    backdrop-filter:blur(2px);
+    display:flex; align-items:center; justify-content:center;
+    font-size:2.2rem; font-weight:800; color:var(--cyan);
+    text-shadow:0 0 14px rgba(0,194,203,.6);
+  }
+  .cube-face:nth-child(1){ transform:translateZ(75px); }
+  .cube-face:nth-child(2){ transform:rotateY(180deg) translateZ(75px); }
+  .cube-face:nth-child(3){ transform:rotateY(90deg) translateZ(75px); }
+  .cube-face:nth-child(4){ transform:rotateY(-90deg) translateZ(75px); }
+  .cube-face:nth-child(5){ transform:rotateX(90deg) translateZ(75px); }
+  .cube-face:nth-child(6){ transform:rotateX(-90deg) translateZ(75px); }
+
+  /* -------------------- section heading -------------------- */
+  .section-head{
+    display:flex; align-items:baseline; justify-content:space-between;
+    margin:0 0 14px;
+  }
+  .section-head h2{ font-size:1.15rem; font-weight:700; }
+  .section-head span{ color:var(--muted); font-size:.82rem; }
+
+  .chip-row{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:22px; }
+  .chip{
+    padding:7px 14px; border-radius:20px; font-size:.8rem; font-weight:600;
+    background:var(--panel-2); border:1px solid var(--line); color:var(--muted);
+    cursor:pointer; transition:.2s;
+    user-select:none;
+  }
+  .chip:hover{ color:var(--ink); border-color:var(--cyan); }
+  .chip.active{ color:#06272a; background:var(--cyan); border-color:var(--cyan); }
+
+  /* -------------------- 3D tilt grid -------------------- */
+  .grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fill,minmax(170px,1fr));
+    gap:20px;
+    perspective:900px;
+  }
+  .tile{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:12px;
+    overflow:hidden;
+    cursor:pointer;
+    opacity:0; transform:translateY(16px);
+    animation:cardIn .55s ease-out forwards;
+    transition:box-shadow .2s ease, border-color .2s ease;
+    transform-style:preserve-3d;
+    will-change:transform;
+  }
+  .tile:hover{ border-color:var(--cyan); box-shadow:0 18px 34px rgba(0,194,203,.22); z-index:2; }
+  @keyframes cardIn{ to{opacity:1; transform:translateY(0);} }
+
+  .tile img{ width:100%; aspect-ratio:1/1; object-fit:cover; display:block; background:var(--panel-2); transform:translateZ(18px); }
+  .tile .tile-info{ padding:9px 11px 11px; transform:translateZ(24px); }
+  .tile .tile-name{ font-weight:700; font-size:.88rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .tile .tile-sub{ font-size:.72rem; color:var(--muted); margin-top:2px; }
+
+  /* -------------------- detail overlay -------------------- */
+  .overlay{
+    position:fixed; inset:0; z-index:200;
+    background:rgba(6,7,10,.75);
+    backdrop-filter:blur(4px);
+    display:flex; align-items:center; justify-content:center;
+    padding:20px;
+    opacity:0; pointer-events:none;
+    transition:opacity .25s ease;
+    perspective:1200px;
+  }
+  .overlay.show{ opacity:1; pointer-events:auto; }
+
+  .detail-card{
+    width:min(680px,100%);
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:18px;
+    overflow:hidden;
+    transform:rotateX(8deg) scale(.9) translateY(10px);
+    transition:transform .35s cubic-bezier(.2,.9,.3,1.2);
+  }
+  .overlay.show .detail-card{ transform:rotateX(0deg) scale(1) translateY(0); }
+
+  .detail-hero{
+    position:relative;
+    width:100%; aspect-ratio:16/7;
+    background:var(--panel-2);
+  }
+  .detail-hero img{ width:100%; height:100%; object-fit:cover; display:block; }
+  #previewFrame{ width:100%; height:100%; border:none; display:block; background:#000; }
+  .preview-status{
+    position:absolute; inset:0; z-index:2;
+    display:flex; align-items:center; justify-content:center; text-align:center;
+    background:rgba(10,12,16,.88); color:var(--muted); font-size:.82rem; padding:20px;
+  }
+  .close-btn{
+    position:absolute; top:14px; right:14px;
+    width:34px; height:34px; border-radius:50%;
+    background:rgba(10,12,16,.6); border:1px solid var(--line);
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer; color:var(--ink); font-size:1rem;
+  }
+  .close-btn:hover{ background:rgba(10,12,16,.9); }
+
+  .detail-body{ padding:24px 26px 28px; }
+  .detail-title{ font-size:1.5rem; font-weight:800; margin-bottom:6px; }
+  .detail-meta{ color:var(--muted); font-size:.85rem; margin-bottom:16px; }
+  .detail-meta b{ color:var(--amber); }
+  .detail-desc{ color:#c6cbd6; font-size:.92rem; line-height:1.6; margin-bottom:22px; }
+
+  .play-btn{
+    display:inline-flex; align-items:center; gap:10px;
+    background:var(--cyan); color:#06272a;
+    font-weight:800; font-size:1rem;
+    padding:13px 34px; border-radius:10px;
+    border:none; cursor:pointer;
+    text-decoration:none;
+    transition:background .2s ease, transform .15s ease;
+  }
+  .play-btn:hover{ background:#28e0e8; transform:translateY(-2px); }
+  .play-btn:active{ transform:translateY(0); }
+
+  .btn-row{ display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  .preview-btn{
+    padding:13px 22px; border-radius:10px; font-weight:700; font-size:.88rem;
+    background:var(--panel-2); border:1px solid var(--line); color:var(--ink);
+    cursor:pointer; transition:.2s;
+  }
+  .preview-btn:hover{ border-color:var(--cyan); color:var(--cyan); }
+  .preview-btn.active{ border-color:var(--magenta); color:var(--magenta); }
+
+  /* -------------------- About page -------------------- */
+  .about-hero{
+    position:relative;
+    border-radius:16px;
+    padding:56px 34px;
+    margin-bottom:36px;
+    text-align:center;
+    background:
+      radial-gradient(circle at 20% 30%, rgba(0,194,203,.16), transparent 50%),
+      radial-gradient(circle at 80% 70%, rgba(255,61,120,.14), transparent 50%),
+      var(--panel);
+    border:1px solid var(--line);
+    overflow:hidden;
+  }
+  .about-hero h1{ font-size:clamp(1.7rem,4vw,2.6rem); font-weight:800; margin-bottom:14px; }
+  .about-hero h1 span{ color:var(--cyan); text-shadow:0 0 20px rgba(0,194,203,.4); }
+  .about-hero p{ max-width:640px; margin:0 auto; color:var(--muted); font-size:1rem; line-height:1.6; }
+
+  /* rotating 3D globe made of intersecting rings — "one place, worldwide" */
+  .globe-stage{
+    width:190px; height:190px; margin:34px auto 6px;
+    perspective:700px;
+  }
+  .globe{
+    width:100%; height:100%; position:relative;
+    transform-style:preserve-3d;
+    animation:spinGlobe 16s linear infinite;
+  }
+  @keyframes spinGlobe{ from{ transform:rotateY(0deg) rotateX(18deg); } to{ transform:rotateY(360deg) rotateX(18deg); } }
+  .globe-ring{
+    position:absolute; inset:0;
+    border:2px solid rgba(0,194,203,.55);
+    border-radius:50%;
+  }
+  .globe-ring:nth-child(1){ transform:rotateY(0deg); }
+  .globe-ring:nth-child(2){ transform:rotateY(60deg); border-color:rgba(255,61,120,.5); }
+  .globe-ring:nth-child(3){ transform:rotateY(120deg); border-color:rgba(255,178,56,.5); }
+  .globe-core{
+    position:absolute; inset:26%;
+    border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, rgba(0,194,203,.5), rgba(23,26,33,.9) 70%);
+    box-shadow:0 0 40px rgba(0,194,203,.35);
+  }
+
+  .about-grid{
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr));
+    gap:20px; margin-bottom:40px; perspective:900px;
+  }
+  .about-card{
+    background:var(--panel); border:1px solid var(--line); border-radius:14px;
+    padding:26px 22px; transition:transform .25s ease, border-color .25s ease, box-shadow .25s ease;
+  }
+  .about-card:hover{ transform:translateY(-6px) rotateX(4deg); border-color:var(--cyan); box-shadow:0 16px 30px rgba(0,194,203,.16); }
+  .about-card .icon{ font-size:1.8rem; margin-bottom:12px; }
+  .about-card h3{ font-size:1.02rem; margin-bottom:8px; }
+  .about-card p{ color:var(--muted); font-size:.86rem; line-height:1.55; }
+
+  .stats-row{
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+    gap:16px; margin-bottom:40px;
+  }
+  .stat{
+    background:var(--panel-2); border:1px solid var(--line); border-radius:12px;
+    padding:20px; text-align:center;
+  }
+  .stat .num{ font-size:1.7rem; font-weight:800; color:var(--cyan); }
+  .stat .lbl{ font-size:.78rem; color:var(--muted); margin-top:4px; }
+
+  .mission-block{
+    background:var(--panel); border:1px solid var(--line); border-radius:16px;
+    padding:32px; margin-bottom:20px;
+    border-left:3px solid var(--cyan);
+  }
+  .mission-block h2{ font-size:1.2rem; margin-bottom:12px; }
+  .mission-block p{ color:#c6cbd6; font-size:.94rem; line-height:1.7; }
+  .mission-block p + p{ margin-top:10px; }
+
+  footer{
+    text-align:center; padding:18px; color:var(--muted); font-size:.8rem;
+    border-top:1px solid var(--line);
+    position:relative; z-index:1;
+  }
+  footer b{ color:var(--cyan); }
+
+  @media (max-width:900px){
+    .content{ padding:20px 14px 60px; }
+    .grid{ grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:14px; }
+    .banner{ padding:28px 22px; }
+    .about-hero{ padding:38px 20px; }
+    .detail-card{ margin:0 8px; }
+  }
+
+  @media (max-width:640px){
+    .sidebar{ width:56px; }
+    .side-btn{ width:42px; height:42px; font-size:.58rem; }
+    .side-btn svg{ width:17px; height:17px; }
+    .navtabs{ display:none; }
+    .cube-stage{ display:none; }
+    .topbar{ padding:10px 12px; gap:10px; }
+    .search{ max-width:none; }
+    .accent-dots{ display:none; }
+    .badge{ display:none; }
+    .grid{ grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:10px; }
+    .section-head{ flex-direction:column; align-items:flex-start; gap:8px; }
+    .controls-row{ width:100%; }
+    .sort-select, .surprise-btn{ flex:1; text-align:center; }
+    .featured-card{ flex-direction:column; align-items:flex-start; text-align:left; }
+    .featured-card .f-cta{ margin-left:0; }
+    .btn-row{ flex-direction:column; align-items:stretch; }
+    .btn-row .play-btn, .btn-row .preview-btn{ text-align:center; }
+    .bell-panel{ width:min(88vw, 290px); right:-8px; }
+    .toast{ right:12px; left:12px; width:auto; bottom:16px; }
+    .welcome-card{ padding:30px 20px 26px; }
+    .top-banner{ font-size:.76rem; padding:9px 14px; flex-wrap:wrap; justify-content:center; }
+  }
+
+  @media (max-width:420px){
+    .logo{ font-size:1.05rem; }
+    .grid{ grid-template-columns:repeat(auto-fill,minmax(105px,1fr)); gap:8px; }
+    .tile .tile-name{ font-size:.78rem; }
+    .about-grid{ grid-template-columns:1fr; }
+    .stats-row{ grid-template-columns:repeat(2,1fr); }
+    .globe-stage{ width:140px; height:140px; }
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    *{ animation:none !important; transition:none !important; }
+  }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+  <canvas id="depthCanvas"></canvas>
+
+  <div class="topbar">
+    <div class="logo" data-nav="home"><span class="dot"></span>Bs111</div>
+    <div class="navtabs">
+      <div class="navtab active" data-nav="home">Home</div>
+      <div class="navtab" data-nav="anime">Anime</div>
+      <div class="navtab" data-nav="about">About Us</div>
+    </div>
+    <div class="search">
+      🔍<input id="searchInput" type="text" placeholder="Search games and sites...">
+    </div>
+    <div class="topbar-right">
+      <div class="accent-dots" title="Accent color">
+        <div class="accent-dot active" data-accent="#00c2cb" style="background:#00c2cb"></div>
+        <div class="accent-dot" data-accent="#ff3d78" style="background:#ff3d78"></div>
+        <div class="accent-dot" data-accent="#ffb238" style="background:#ffb238"></div>
+      </div>
+      <div class="icon-btn" id="themeToggle" title="Toggle light/dark">🌙</div>
+      <div class="icon-btn" id="installBtn" title="Install app" style="display:none;">⬇️</div>
+      <div class="bell-wrap">
+        <div class="icon-btn" id="bellBtn" title="What's new / coming soon">🔔<span class="bell-badge" id="bellBadge"></span></div>
+        <div class="bell-panel" id="bellPanel">
+          <h4>📣 Updates</h4>
+          <div id="roadmapList"></div>
+        </div>
+      </div>
+      <span class="badge" id="countBadge">0 items</span>
+    </div>
+  </div>
+
+  <div class="layout">
+    <div class="sidebar">
+      <div class="side-btn active" data-nav="home">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12l9-9 9 9M5 10v10h14V10"/></svg>
+        Home
+      </div>
+      <div class="side-btn" data-nav="home" data-focus-search="1">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
+        Search
+      </div>
+      <div class="side-btn" data-nav="home">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+        All
+      </div>
+      <div class="side-btn" data-nav="anime">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l2.5 5.5L20 9l-4 4 1 6-5-3-5 3 1-6-4-4 5.5-.5z"/></svg>
+        Anime
+      </div>
+      <div class="side-btn" data-nav="about">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.7 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.7-3.8-9s1.3-6.4 3.8-9z"/></svg>
+        About
+      </div>
+    </div>
+
+    <div class="content">
+
+      <!-- ================= HOME VIEW ================= -->
+      <div class="view active" id="view-home">
+        <div class="banner">
+          <div class="banner-text">
+            <span class="draw-line"></span>
+            <h1>Welcome to <span>G-Store</span></h1>
+            <p>Every game, one place, playable instantly — built by <b>Bs111 with Love</b>.</p>
+          </div>
+          <div class="cube-stage">
+            <div class="cube">
+              <div class="cube-face">G</div>
+              <div class="cube-face">S</div>
+              <div class="cube-face">▶</div>
+              <div class="cube-face">★</div>
+              <div class="cube-face">🎮</div>
+              <div class="cube-face">🌐</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-head"><h2>🌟 Featured Today</h2><span>Changes daily</span></div>
+        <div class="featured-card" id="featuredCard"></div>
+
+        <div id="continueSection" style="display:none;">
+          <div class="section-head"><h2>▶ Continue Playing</h2><span></span></div>
+          <div class="continue-strip" id="continueStrip"></div>
+        </div>
+
+        <div class="section-head">
+          <h2>All games &amp; sites</h2>
+          <div class="controls-row">
+            <span id="visibleCount"></span>
+            <select class="sort-select" id="sortSelect">
+              <option value="name">Sort: A–Z</option>
+              <option value="cat">Sort: Category</option>
+              <option value="plays">Sort: Most Played</option>
+            </select>
+            <div class="surprise-btn" id="surpriseBtn">🎲 Surprise Me</div>
+          </div>
+        </div>
+        <div class="chip-row" id="chipRow"></div>
+        <div class="chip-row" id="tagRow"></div>
+        <div class="grid" id="grid"></div>
+      </div>
+
+      <!-- ================= ANIME VIEW ================= -->
+      <div class="view" id="view-anime">
+        <div class="about-hero">
+          <h1>New <span>Anime</span> This Season</h1>
+          <p>A quick-look board of what's currently airing — tap any title to look it up on MyAnimeList and find where to watch it legally.</p>
+        </div>
+        <div class="section-head"><h2>📺 Currently Airing</h2><span id="animeUpdated"></span></div>
+        <div class="grid" id="animeGrid"></div>
+      </div>
+
+      <!-- ================= ABOUT VIEW ================= -->
+      <div class="view" id="view-about">
+        <div class="about-hero">
+          <h1>About <span>Bs111 G-Store</span></h1>
+          <p>We're building the one link every player needs — a single hub that brings every browser game and site together, so nobody has to go hunting across the internet to play.</p>
+          <div class="globe-stage">
+            <div class="globe">
+              <div class="globe-ring"></div>
+              <div class="globe-ring"></div>
+              <div class="globe-ring"></div>
+              <div class="globe-core"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="stats-row" id="statsRow"></div>
+
+        <div class="mission-block">
+          <h2>🎯 Our Aim</h2>
+          <p>Our aim is to join all games in one place for users around the world — no more scattered bookmarks, no more searching ten different sites just to find something fun to play.</p>
+          <p>Whether you've got five minutes or five hours, G-Store is built to get you from "I'm bored" to "I'm playing" in one click, from any device, anywhere on the planet.</p>
+        </div>
+
+        <div class="about-grid">
+          <div class="about-card">
+            <div class="icon">🌍</div>
+            <h3>One place, worldwide</h3>
+            <p>Every game and tool here is picked and organized so players anywhere in the world can find something to play in seconds — no accounts, no downloads.</p>
+          </div>
+          <div class="about-card">
+            <div class="icon">⚡</div>
+            <h3>Instant access</h3>
+            <p>Everything runs straight in the browser. Click a tile, hit Play, and you're in — on a laptop, a school Chromebook, or a phone.</p>
+          </div>
+          <div class="about-card">
+            <div class="icon">🧭</div>
+            <h3>Curated, not cluttered</h3>
+            <p>Games are sorted into real categories and searchable by name, so the library grows without ever feeling like a mess to dig through.</p>
+          </div>
+          <div class="about-card">
+            <div class="icon">❤️</div>
+            <h3>Made by a player</h3>
+            <p>G-Store is built and maintained by Bs111, one person who got tired of losing good game links and decided to keep them all in one place for everyone.</p>
+          </div>
+        </div>
+
+        <div class="mission-block" style="border-left-color:var(--magenta);">
+          <h2>🚀 Where we're headed</h2>
+          <p>The library keeps growing — more genres, more sites, and smarter search — with the same goal every time: one link, every game, anyone, anywhere.</p>
+        </div>
+
+        <div class="section-head"><h2>📊 My Activity</h2><span>Stored only on this device</span></div>
+        <div class="stats-row" id="myActivityRow"></div>
+
+        <div class="mission-block">
+          <h2>💾 Your Data</h2>
+          <p>Favorites, ratings, notes, and play history are saved only in this browser. Export them to back up or move to another device, or import a previous backup below.</p>
+          <div class="btn-row" style="margin-top:14px;">
+            <div class="preview-btn" id="exportBtn">⬇️ Export my data</div>
+            <div class="preview-btn" id="importBtn">⬆️ Import backup</div>
+            <input type="file" id="importFile" accept="application/json" style="display:none;">
+          </div>
+        </div>
+
+        <p style="text-align:center; color:var(--muted); font-size:.8rem; margin-top:8px;">Site last updated: <b style="color:var(--cyan);" id="aboutUpdated"></b></p>
+      </div>
+
+    </div>
+  </div>
+
+  <footer>Built &amp; maintained by <b>Bs111</b></footer>
+  <footer>All websites are working if any issues occur kindly refresh the site</footer>
+
+  <!-- ---------- detail overlay ---------- -->
+  <div class="overlay" id="overlay">
+    <div class="detail-card">
+      <div class="detail-hero" id="detailHero">
+        <img id="detailImg" src="" alt="">
+        <iframe id="previewFrame" style="display:none;"></iframe>
+        <div class="preview-status" id="previewStatus" style="display:none;"></div>
+        <div class="close-btn" id="closeBtn">✕</div>
+      </div>
+      <div class="detail-body">
+        <div class="detail-title" id="detailTitle"></div>
+        <div class="detail-meta">By <b>Bs111</b> · <span id="detailUrlLabel"></span> · <span id="detailCatLabel"></span> · Updated <span id="detailUpdated"></span></div>
+        <div class="detail-desc" id="detailDesc"></div>
+        <div class="rating-row"><span class="rlabel">Your rating:</span><span id="ratingStars"></span></div>
+        <div class="notes-box">
+          <label for="notesInput">📝 Your notes (private, saved on this device)</label>
+          <textarea id="notesInput" placeholder="Progress, tips, reminders..."></textarea>
+        </div>
+        <div class="btn-row">
+          <a class="play-btn" id="playBtn" href="#" target="_blank" rel="noopener noreferrer">▶ Play</a>
+          <div class="preview-btn" id="previewBtn">👁 Live Preview</div>
+          <div class="preview-btn" id="shareBtn">🔗 Share</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ---------- welcome modal ---------- -->
+  <div class="overlay" id="welcomeOverlay">
+    <div class="welcome-card">
+      <div class="welcome-icon">🎮</div>
+      <h2>Welcome to <span>Bs111 G-Store</span></h2>
+      <p>Every game, one place, playable instantly. Star your favorites, rate what you play, and pick up right where you left off — all in one link, built for players everywhere.</p>
+      <button class="welcome-go" id="welcomeGo">Let's go ▶</button>
+    </div>
+  </div>
+
+  <!-- ---------- update toast ---------- -->
+  <div class="toast" id="updateToast">
+    <div class="t-icon">🎉</div>
+    <div>
+      <div class="t-title">New: Favorites, ratings &amp; themes!</div>
+      <div class="t-body">Tap 🔔 up top to see what's new and what's coming next.</div>
+    </div>
+    <div class="t-close" id="toastClose">✕</div>
+  </div>
+
+  <!-- ---------- top banner alert (major update) ---------- -->
+  <div class="top-banner" id="topBanner">
+    <span class="tb-icon">🚀</span>
+    <span class="tb-text"><b>Huge update!</b> 200+ games, an Anime section, tags, notes &amp; backups — all live now.</span>
+    <span class="tb-link" id="topBannerLink">See what's new</span>
+    <span class="tb-close" id="topBannerClose">✕</span>
+  </div>
+
+<script>
+  /* ============================================================
+     ITEMS — the only place you need to edit to add new games
+     or websites. Copy a line and change it:
+
+     {
+       name: "Display Name",
+       url:  "https://the-real-link.com",
+       img:  fav("the-real-link.com"),
+       desc: "One line description shown on the tile/detail page",
+       cat:  "Category Name"
+     }
+     ============================================================ */
+
+function fav(domain){ return "https://www.google.com/s2/favicons?sz=128&domain=" + domain; }
+
+const ITEMS = [
+
+  // ---- Utility / Reference (your originals) ----
+  { name:"Chess.com",  url:"https://www.chess.com",                           img:fav("chess.com"),        desc:"Play chess online against people or the computer.", cat:"Utility" },
+  { name:"Poki Games", url:"https://poki.com",                                img:fav("poki.com"),         desc:"A huge library of free browser games.", cat:"Utility" },
+  { name:"CrazyGames", url:"https://www.crazygames.com",                      img:fav("crazygames.com"),   desc:"Instant-play games, no downloads needed.", cat:"Utility" },
+  { name:"YouTube",    url:"https://www.youtube.com",                         img:fav("youtube.com"),      desc:"Watch videos from your favorite creators.", cat:"Utility" },
+  { name:"Wordle",     url:"https://www.nytimes.com/games/wordle/index.html", img:fav("nytimes.com"),      desc:"Guess the five-letter word in six tries.", cat:"Brain & Word" },
+
+  // ---- 1. FPS / Shooter ----
+  { name:"Krunker.io",      url:"https://krunker.io",     img:fav("krunker.io"),     desc:"Fast-paced browser FPS shooter.", cat:"Shooter" },
+  { name:"Shell Shockers",  url:"https://shellshock.io",  img:fav("shellshock.io"),  desc:"Egg-based multiplayer first-person shooter.", cat:"Shooter" },
+  { name:"War Brokers",     url:"https://warbrokers.io",  img:fav("warbrokers.io"),  desc:"Vehicle-heavy multiplayer FPS with big maps.", cat:"Shooter" },
+  { name:"Venge.io",        url:"https://venge.io",       img:fav("venge.io"),       desc:"Fast browser FPS with classes and abilities.", cat:"Shooter" },
+  { name:"Deadshot.io",     url:"https://deadshot.io",    img:fav("deadshot.io"),    desc:"Simple, fast browser shooter arena.", cat:"Shooter" },
+  { name:"Ev.io",           url:"https://ev.io",          img:fav("ev.io"),          desc:"Web-based competitive FPS with ranked play.", cat:"Shooter" },
+  { name:"Voxiom.io",       url:"https://voxiom.io",      img:fav("voxiom.io"),      desc:"Voxel-style multiplayer FPS shooter.", cat:"Shooter" },
+  { name:"Kirka.io",        url:"https://kirka.io",       img:fav("kirka.io"),       desc:"3D multiplayer FPS with multiple game modes.", cat:"Shooter" },
+
+  // ---- 2. Battle Royale / Building ----
+  { name:"ZombsRoyale.io", url:"https://zombsroyale.io",  img:fav("zombsroyale.io"), desc:"2D battle royale shooter, browser-based.", cat:"Battle Royale" },
+  { name:"Surviv.io",      url:"https://surviv.io",       img:fav("surviv.io"),      desc:"Top-down 2D battle royale survival game.", cat:"Battle Royale" },
+  { name:"Build Royale",   url:"https://buildroyale.io",  img:fav("buildroyale.io"), desc:"Build-and-battle royale shooter.", cat:"Battle Royale" },
+  { name:"Craftnite.io",   url:"https://craftnite.io",    img:fav("craftnite.io"),   desc:"Minecraft-meets-Fortnite battle royale shooter.", cat:"Battle Royale" },
+  { name:"Bloxd.io",       url:"https://bloxd.io",        img:fav("bloxd.io"),       desc:"Blocky multiplayer sandbox with minigames.", cat:"Battle Royale" },
+
+  // ---- 3. Racing ----
+  { name:"Drift Hunters",        url:"https://www.crazygames.com/game/drift-hunters", img:fav("crazygames.com"), desc:"Realistic drift-racing simulator.", cat:"Racing" },
+  { name:"Madalin Stunt Cars 2", url:"https://poki.com/en/g/madalin-stunt-cars-2",     img:fav("poki.com"),      desc:"Open-world stunt driving with sports cars.", cat:"Racing" },
+  { name:"Smash Karts",          url:"https://smashkarts.io",                          img:fav("smashkarts.io"), desc:"Multiplayer kart battle arena game.", cat:"Racing" },
+  { name:"Moto X3M",             url:"https://poki.com/en/g/moto-x3m",                 img:fav("poki.com"),      desc:"Motorbike stunt racing across obstacle tracks.", cat:"Racing" },
+  { name:"Burnin' Rubber 5 XS",  url:"https://poki.com/en/g/burnin-rubber-5-xs",       img:fav("poki.com"),      desc:"Combat racing with weapons and jumps.", cat:"Racing" },
+  { name:"Slow Roads",           url:"https://slowroads.io",                           img:fav("slowroads.io"),  desc:"Endless relaxing procedural driving game.", cat:"Racing" },
+  { name:"Traffic Run",          url:"https://www.crazygames.com/game/traffic-run",    img:fav("crazygames.com"), desc:"Dodge traffic in this fast casual driving game.", cat:"Racing" },
+
+  // ---- 4. Puzzle ----
+  { name:"2048",           url:"https://play2048.co",                            img:fav("play2048.co"),   desc:"Merge tiles to reach the 2048 tile.", cat:"Puzzle" },
+  { name:"Hex FRVR",       url:"https://hex.frvr.com",                           img:fav("hex.frvr.com"),  desc:"Place hex pieces to clear lines, Tetris-style.", cat:"Puzzle" },
+  { name:"Sudoku.com",     url:"https://sudoku.com",                             img:fav("sudoku.com"),    desc:"Classic number-logic puzzle game.", cat:"Puzzle" },
+  { name:"Cut the Rope",   url:"https://www.crazygames.com/game/cut-the-rope",   img:fav("crazygames.com"), desc:"Swing candy into a hungry monster's mouth.", cat:"Puzzle" },
+  { name:"Flow Free",      url:"https://www.crazygames.com/game/flow-free",      img:fav("crazygames.com"), desc:"Connect matching colors without crossing lines.", cat:"Puzzle" },
+  { name:"Little Alchemy", url:"https://littlealchemy.com",                      img:fav("littlealchemy.com"), desc:"Combine elements to discover new ones.", cat:"Puzzle" },
+  { name:"Bloxorz",        url:"https://www.crazygames.com/game/bloxorz",        img:fav("crazygames.com"), desc:"Roll a block across tricky 3D platforms.", cat:"Puzzle" },
+
+  // ---- 5. Strategy / Empire builders ----
+  { name:"Forge of Empires", url:"https://www.forgeofempires.com", img:fav("forgeofempires.com"), desc:"Build and grow a city through the ages.", cat:"Strategy" },
+  { name:"Travian",          url:"https://www.travian.com",        img:fav("travian.com"),        desc:"Browser-based ancient civilization strategy game.", cat:"Strategy" },
+  { name:"Tribal Wars",      url:"https://www.tribalwars.net",     img:fav("tribalwars.net"),     desc:"Medieval village-building strategy MMO.", cat:"Strategy" },
+  { name:"Little War Game",  url:"https://littlewargame.com",      img:fav("littlewargame.com"),  desc:"Real-time medieval strategy battles in the browser.", cat:"Strategy" },
+  { name:"Goodgame Empire",  url:"https://www.goodgamestudios.com/games/goodgame-empire", img:fav("goodgamestudios.com"), desc:"Castle-building medieval strategy game.", cat:"Strategy" },
+  { name:"Bloons TD 6",      url:"https://www.crazygames.com/game/bloons-tower-defense-6", img:fav("crazygames.com"), desc:"Pop waves of balloons with clever tower defense.", cat:"Strategy" },
+  { name:"Zombs.io",         url:"https://zombs.io",               img:fav("zombs.io"),           desc:"Build a base and defend it from zombie hordes.", cat:"Strategy" },
+
+  // ---- 6. MMORPG ----
+  { name:"RuneScape",             url:"https://www.runescape.com",       img:fav("runescape.com"),        desc:"Classic browser-based fantasy MMORPG.", cat:"MMORPG" },
+  { name:"Old School RuneScape",  url:"https://oldschool.runescape.com", img:fav("oldschool.runescape.com"), desc:"Legacy version of RuneScape's original world.", cat:"MMORPG" },
+  { name:"Flyff Universe",        url:"https://universe.flyff.com",      img:fav("universe.flyff.com"),   desc:"Anime-style browser MMORPG with flying mounts.", cat:"MMORPG" },
+  { name:"AdventureQuest Worlds", url:"https://www.aq.com",              img:fav("aq.com"),               desc:"Browser MMORPG with fast-paced combat.", cat:"MMORPG" },
+  { name:"Drakensang Online",     url:"https://www.drakensang.com",      img:fav("drakensang.com"),       desc:"Action RPG with dungeons, browser-playable.", cat:"MMORPG" },
+  { name:"AdventureQuest",        url:"https://www.battleon.com",        img:fav("battleon.com"),         desc:"Classic browser turn-based RPG adventure.", cat:"MMORPG" },
+
+  // ---- 7. Card Games ----
+  { name:"Solitaire",        url:"https://www.solitaire.org",                    img:fav("solitaire.org"), desc:"Classic single-player card game.", cat:"Card Games" },
+  { name:"Spider Solitaire", url:"https://www.solitaire.org/spider-solitaire/",  img:fav("solitaire.org"), desc:"Solitaire variant using two decks of cards.", cat:"Card Games" },
+  { name:"Hearts",           url:"https://www.crazygames.com/game/hearts",       img:fav("crazygames.com"), desc:"Trick-taking card game for four players.", cat:"Card Games" },
+  { name:"Spades",           url:"https://www.crazygames.com/game/spades",       img:fav("crazygames.com"), desc:"Classic partnership trick-taking card game.", cat:"Card Games" },
+  { name:"FreeCell",         url:"https://www.solitaire.org/freecell/",          img:fav("solitaire.org"), desc:"Solitaire variant where all cards are visible.", cat:"Card Games" },
+
+  // ---- 8. Board Games ----
+  { name:"Lichess",           url:"https://lichess.org",                      img:fav("lichess.org"),      desc:"Free, open-source online chess server.", cat:"Board Games" },
+  { name:"Checkers Online",   url:"https://www.crazygames.com/game/checkers", img:fav("crazygames.com"),   desc:"Classic checkers against the computer or a friend.", cat:"Board Games" },
+  { name:"247 Backgammon",    url:"https://www.247backgammon.com",            img:fav("247backgammon.com"), desc:"Classic dice-and-strategy board game.", cat:"Board Games" },
+  { name:"Codenames Online",  url:"https://codenames.game",                   img:fav("codenames.game"),   desc:"Word-guessing team party game.", cat:"Board Games" },
+
+  // ---- 9. Brain / Word Games ----
+  { name:"Lumosity",     url:"https://www.lumosity.com", img:fav("lumosity.com"), desc:"Brain-training games and puzzles.", cat:"Brain & Word" },
+  { name:"Word Search",  url:"https://thewordsearch.com", img:fav("thewordsearch.com"), desc:"Find hidden words in a letter grid.", cat:"Brain & Word" },
+  { name:"TypeRacer",    url:"https://play.typeracer.com", img:fav("play.typeracer.com"), desc:"Race others by typing passages quickly.", cat:"Brain & Word" },
+
+  // ---- 10. Sports ----
+  { name:"Basketball Stars",       url:"https://www.crazygames.com/game/basketball-stars",         img:fav("crazygames.com"), desc:"1v1 arcade basketball matches online.", cat:"Sports" },
+  { name:"Basketball Legends",     url:"https://www.crazygames.com/game/basketball-legends",       img:fav("crazygames.com"), desc:"2-player arcade basketball with special moves.", cat:"Sports" },
+  { name:"Soccer Skills Euro Cup", url:"https://www.crazygames.com/game/soccer-skills-euro-cup",   img:fav("crazygames.com"), desc:"Skill-based arcade soccer challenges.", cat:"Sports" },
+  { name:"Football Legends",       url:"https://www.crazygames.com/game/football-legends",         img:fav("crazygames.com"), desc:"2-player arcade football brawler.", cat:"Sports" },
+  { name:"8 Ball Pool",            url:"https://www.miniclip.com/games/8-ball-pool-multiplayer/en/", img:fav("miniclip.com"), desc:"Multiplayer pool against players worldwide.", cat:"Sports" },
+  { name:"Basket Random",          url:"https://www.crazygames.com/game/basket-random",            img:fav("crazygames.com"), desc:"Wobbly physics 1v1 basketball with random controls.", cat:"Sports" },
+  { name:"Boxing Random",          url:"https://www.crazygames.com/game/boxing-random",             img:fav("crazygames.com"), desc:"Wobbly physics boxing duel, same random-controls chaos.", cat:"Sports" },
+
+  // ---- 11. Arcade / .io classics ----
+  { name:"Agar.io",       url:"https://agar.io",     img:fav("agar.io"),     desc:"Grow your cell by absorbing smaller ones.", cat:"Arcade / .io" },
+  { name:"Slither.io",    url:"https://slither.io",  img:fav("slither.io"),  desc:"Grow your snake and take over the arena.", cat:"Arcade / .io" },
+  { name:"Paper.io 2",    url:"https://paper-io.com", img:fav("paper-io.com"), desc:"Claim territory while avoiding rivals' trails.", cat:"Arcade / .io" },
+  { name:"Hole.io",       url:"https://hole-io.com", img:fav("hole-io.com"), desc:"Grow a hole by swallowing the city around you.", cat:"Arcade / .io" },
+  { name:"Diep.io",       url:"https://diep.io",     img:fav("diep.io"),     desc:"Tank shooter with upgrade trees and arenas.", cat:"Arcade / .io" },
+  { name:"Wormax.io",     url:"https://wormax.io",   img:fav("wormax.io"),   desc:"Snake-style multiplayer growth arena.", cat:"Arcade / .io" },
+  { name:"Splix.io",      url:"https://splix.io",    img:fav("splix.io"),   desc:"Grid-based territory-capture .io game.", cat:"Arcade / .io" },
+  { name:"Powerline.io",  url:"https://powerline.io", img:fav("powerline.io"), desc:"Neon snake-style multiplayer arena.", cat:"Arcade / .io" },
+  { name:"OvO.io",        url:"https://ovo.io",      img:fav("ovo.io"),     desc:"Precision platformer with slick movement mechanics.", cat:"Arcade / .io" },
+  { name:"Snow Rider 3D", url:"https://www.crazygames.com/game/snow-rider-3d", img:fav("crazygames.com"), desc:"Endless sledding down a snowy hill.", cat:"Arcade / .io" },
+  { name:"1v1.LOL",       url:"https://1v1.lol",     img:fav("1v1.lol"),     desc:"Build-and-battle third-person shooter.", cat:"Arcade / .io" },
+  { name:"Bonk.io",       url:"https://bonk.io",     img:fav("bonk.io"),     desc:"Physics-based multiplayer arena brawler.", cat:"Arcade / .io" },
+  { name:"Deeeep.io",     url:"https://deeeep.io",   img:fav("deeeep.io"),   desc:"Evolve sea creatures in an underwater multiplayer world.", cat:"Arcade / .io" },
+  { name:"Little Big Snake", url:"https://littlebigsnake.com", img:fav("littlebigsnake.com"), desc:"Colorful upgraded take on the classic snake arena.", cat:"Arcade / .io" },
+  { name:"Vex 6",         url:"https://www.crazygames.com/game/vex-6", img:fav("crazygames.com"), desc:"Precision parkour platformer, dodge deadly traps.", cat:"Arcade / .io" },
+
+  // ---- 12. Space ----
+  { name:"StarBlast.io", url:"https://starblast.io", img:fav("starblast.io"), desc:"Multiplayer space shooter with ship upgrades.", cat:"Space" },
+  { name:"Asteroids",    url:"https://www.crazygames.com/game/asteroids", img:fav("crazygames.com"), desc:"Classic arcade space shooter, dodge and blast rocks.", cat:"Space" },
+
+  // ---- 13. Survival ----
+  { name:"MooMoo.io", url:"https://moomoo.io", img:fav("moomoo.io"), desc:"Build, gather, and survive against other players.", cat:"Survival" },
+  { name:"Starve.io", url:"https://starve.io", img:fav("starve.io"), desc:"Survival .io game with crafting and combat.", cat:"Survival" },
+
+  // ---- 14. Idle Games ----
+  { name:"Cookie Clicker",       url:"https://orteil.dashnet.org/cookieclicker/", img:fav("dashnet.org"), desc:"Click cookies and build an idle empire.", cat:"Idle" },
+  { name:"Universal Paperclips", url:"https://www.decisionproblem.com/paperclips/", img:fav("decisionproblem.com"), desc:"Idle game about an AI making paperclips.", cat:"Idle" },
+  { name:"Clicker Heroes",       url:"https://www.clickerheroes.com", img:fav("clickerheroes.com"), desc:"Idle RPG clicker with heroes and bosses.", cat:"Idle" },
+  { name:"Legends of Idleon",   url:"https://www.legendsofidleon.com", img:fav("legendsofidleon.com"), desc:"Idle MMO RPG with dungeons and skills.", cat:"Idle" },
+  { name:"Idle Breakout",        url:"https://www.crazygames.com/game/idle-breakout", img:fav("crazygames.com"), desc:"Brick-breaker that keeps scoring while you're away.", cat:"Idle" },
+
+  // ---- 15. Creative / Party ----
+  { name:"Gartic Phone", url:"https://garticphone.com", img:fav("garticphone.com"), desc:"Draw-and-guess party game like telephone.", cat:"Creative & Party" },
+  { name:"Skribbl.io",   url:"https://skribbl.io",       img:fav("skribbl.io"),      desc:"Multiplayer drawing and guessing game.", cat:"Creative & Party" },
+  { name:"Drawaria",     url:"https://drawaria.online",  img:fav("drawaria.online"), desc:"Draw and guess in a 3D virtual world.", cat:"Creative & Party" },
+  { name:"BombParty",    url:"https://jklm.fun/en/bombparty", img:fav("jklm.fun"),   desc:"Fast word game — name a word before the bomb explodes.", cat:"Creative & Party" },
+  { name:"Spyfall",      url:"https://jklm.fun/en/spyfall",   img:fav("jklm.fun"),   desc:"Social deduction party game with hidden roles.", cat:"Creative & Party" },
+  { name:"Incredibox",   url:"https://www.incredibox.com",    img:fav("incredibox.com"), desc:"Create music by dragging sounds onto beatboxing characters.", cat:"Creative & Party" },
+
+  // ---- 16. Platformer / Action arcade ----
+  { name:"Slope",             url:"https://www.crazygames.com/game/slope",              img:fav("crazygames.com"), desc:"Roll a ball down a fast, tilting 3D track.", cat:"Platformer" },
+  { name:"Rooftop Snipers",   url:"https://www.crazygames.com/game/rooftop-snipers",    img:fav("crazygames.com"), desc:"2-player physics-based sniper duel.", cat:"Platformer" },
+  { name:"Getaway Shootout",  url:"https://www.crazygames.com/game/getaway-shootout",   img:fav("crazygames.com"), desc:"Wacky physics-based multiplayer race and brawl.", cat:"Platformer" },
+  { name:"Stick War Legacy",  url:"https://www.crazygames.com/game/stick-war-legacy",   img:fav("crazygames.com"), desc:"Command stick-figure armies in strategic battles.", cat:"Platformer" },
+  { name:"Bad Ice Cream",     url:"https://www.crazygames.com/game/bad-ice-cream",      img:fav("crazygames.com"), desc:"Maze arcade game — trap fruit, dodge enemies.", cat:"Platformer" },
+  { name:"Fireboy and Watergirl", url:"https://www.crazygames.com/game/fireboy-and-watergirl-forest-temple", img:fav("crazygames.com"), desc:"Co-op puzzle-platformer through elemental temples.", cat:"Platformer" },
+  { name:"Tank Trouble",     url:"https://www.crazygames.com/game/tank-trouble",       img:fav("crazygames.com"), desc:"Maze tank battles for up to 3 players.", cat:"Platformer" },
+  { name:"Run 3",            url:"https://www.crazygames.com/game/run-3",              img:fav("crazygames.com"), desc:"Endless runner through space tunnels.", cat:"Platformer" },
+  { name:"Duck Life",        url:"https://www.crazygames.com/game/duck-life",          img:fav("crazygames.com"), desc:"Train a duck across racing, flying, and swimming.", cat:"Platformer" },
+  { name:"Helix Jump",       url:"https://www.crazygames.com/game/helix-jump",         img:fav("crazygames.com"), desc:"Bounce a ball down a spiraling helix tower.", cat:"Platformer" },
+  { name:"Stack Ball",       url:"https://www.crazygames.com/game/stack-ball",         img:fav("crazygames.com"), desc:"Smash through stacked platforms to the bottom.", cat:"Platformer" },
+
+  // ---- 17. More arcade favorites ----
+  { name:"Among Us",          url:"https://www.crazygames.com/game/among-us",            img:fav("crazygames.com"), desc:"Find the impostor in this social deduction game.", cat:"Arcade / .io" },
+  { name:"Subway Surfers",    url:"https://www.crazygames.com/game/subway-surfers",      img:fav("crazygames.com"), desc:"Endless runner dodging trains through the subway.", cat:"Arcade / .io" },
+  { name:"Temple Run 2",      url:"https://www.crazygames.com/game/temple-run-2",        img:fav("crazygames.com"), desc:"Endless running and dodging through ancient temples.", cat:"Arcade / .io" },
+  { name:"Crossy Road",       url:"https://poki.com/en/g/crossy-road",                   img:fav("poki.com"),      desc:"Hop across busy roads and rivers, arcade style.", cat:"Arcade / .io" },
+  { name:"Stickman Hook",     url:"https://www.crazygames.com/game/stickman-hook",       img:fav("crazygames.com"), desc:"Swing a stickman through levels using grappling hooks.", cat:"Arcade / .io" },
+  { name:"Piano Tiles 2",     url:"https://www.crazygames.com/game/piano-tiles-2",       img:fav("crazygames.com"), desc:"Tap the black tiles in rhythm without missing.", cat:"Music & Rhythm" },
+  { name:"Geometry Dash Lite",url:"https://www.crazygames.com/game/geometry-dash-lite",  img:fav("crazygames.com"), desc:"Rhythm-based platformer, jump and fly through spikes.", cat:"Music & Rhythm" },
+  { name:"Chrome Dino",       url:"https://chromedino.com",                              img:fav("chromedino.com"), desc:"The offline T-Rex runner, playable anytime online.", cat:"Arcade / .io" },
+  { name:"Wings.io",          url:"https://wings.io",                                    img:fav("wings.io"),      desc:"Multiplayer biplane dogfighting arena.", cat:"Arcade / .io" },
+  { name:"Gulper.io",         url:"https://gulper.io",                                   img:fav("gulper.io"),     desc:"Eat-or-be-eaten multiplayer fish arena.", cat:"Arcade / .io" },
+  { name:"Tetris",            url:"https://www.crazygames.com/game/tetris",              img:fav("crazygames.com"), desc:"The classic falling-block puzzle game.", cat:"Puzzle" },
+
+  // ---- 18. Simulation / Life ----
+  { name:"Melon Playground", url:"https://www.crazygames.com/game/melon-playground", img:fav("crazygames.com"), desc:"Sandbox physics playground full of wacky experiments.", cat:"Simulation" },
+  { name:"Adorable Home",    url:"https://www.crazygames.com/game/adorable-home",    img:fav("crazygames.com"), desc:"Cozy virtual pet home simulator with cute characters.", cat:"Simulation" },
+
+  // ---- 19. Cooking ----
+  { name:"Papa's Pizzeria", url:"https://www.crazygames.com/game/papas-pizzeria", img:fav("crazygames.com"), desc:"Run a busy pizza shop and keep every customer happy.", cat:"Cooking" },
+
+  // ---- 20. Quiz / Trivia ----
+  { name:"Kahoot!", url:"https://kahoot.com", img:fav("kahoot.com"), desc:"Live quiz platform for playing trivia with friends.", cat:"Quiz & Trivia" },
+
+  // ---- 21. Geography (ties into "around the world") ----
+  { name:"GeoGuessr", url:"https://www.geoguessr.com", img:fav("geoguessr.com"), desc:"Drop into a street view and guess where in the world you are.", cat:"Geography" },
+  { name:"Worldle",    url:"https://worldle.teuteuf.fr", img:fav("teuteuf.fr"), desc:"Guess the country from its silhouette, one try a day.", cat:"Geography" },
+
+  // ---- 22. Game Portals / Big Sites ----
+  { name:"Kongregate",      url:"https://www.kongregate.com",  img:fav("kongregate.com"),  desc:"Long-running portal with thousands of free browser games.", cat:"Game Portals" },
+  { name:"Newgrounds",      url:"https://www.newgrounds.com",  img:fav("newgrounds.com"),  desc:"Classic hub for indie games, animation, and art.", cat:"Game Portals" },
+  { name:"Armor Games",     url:"https://armorgames.com",      img:fav("armorgames.com"),  desc:"Curated portal full of strategy and adventure games.", cat:"Game Portals" },
+  { name:"Coolmath Games",  url:"https://www.coolmathgames.com", img:fav("coolmathgames.com"), desc:"Casual puzzle and logic games for quick breaks.", cat:"Game Portals" },
+  { name:"Silvergames",     url:"https://www.silvergames.com", img:fav("silvergames.com"), desc:"Large free-to-play browser game collection.", cat:"Game Portals" },
+  { name:"Y8",              url:"https://www.y8.com",          img:fav("y8.com"),          desc:"One of the web's oldest free online game portals.", cat:"Game Portals" },
+  { name:"Friv",            url:"https://friv.com",            img:fav("friv.com"),        desc:"Simple, classic portal of quick browser games.", cat:"Game Portals" },
+  { name:"Agame",           url:"https://www.agame.com",       img:fav("agame.com"),       desc:"Family-friendly portal of casual browser games.", cat:"Game Portals" },
+  { name:"itch.io",         url:"https://itch.io",             img:fav("itch.io"),         desc:"Indie game marketplace with tons of free browser titles.", cat:"Game Portals" },
+  { name:"Kizi",            url:"https://www.kizi.com",        img:fav("kizi.com"),        desc:"Kid-friendly portal full of colorful casual games.", cat:"Game Portals" },
+  { name:"Game Jolt",       url:"https://gamejolt.com",        img:fav("gamejolt.com"),    desc:"Community-driven hub for indie and fan-made games.", cat:"Game Portals" },
+  { name:"Roblox",          url:"https://www.roblox.com",      img:fav("roblox.com"),      desc:"Massive platform of user-made games and worlds.", cat:"Game Portals" },
+  { name:"Board Game Arena", url:"https://boardgamearena.com", img:fav("boardgamearena.com"), desc:"Play hundreds of real board games online with others.", cat:"Game Portals" },
+
+  // ---- 23. More Puzzle ----
+  { name:"NYT Connections", url:"https://www.nytimes.com/games/connections", img:fav("nytimes.com"), desc:"Group words that share a hidden connection.", cat:"Puzzle" },
+  { name:"Waffle",          url:"https://wafflegame.net",      img:fav("wafflegame.net"),  desc:"Swap letters to solve six words at once.", cat:"Puzzle" },
+  { name:"Nerdle",          url:"https://nerdlegame.com",       img:fav("nerdlegame.com"),  desc:"Wordle, but with math equations instead of words.", cat:"Puzzle" },
+  { name:"Jigsaw Planet",   url:"https://www.jigsawplanet.com", img:fav("jigsawplanet.com"), desc:"Solve jigsaw puzzles from any photo online.", cat:"Puzzle" },
+  { name:"Minesweeper Online", url:"https://minesweeper.online", img:fav("minesweeper.online"), desc:"The classic mine-clearing logic game.", cat:"Puzzle" },
+  { name:"Tetris (Official)", url:"https://tetris.com/play-tetris", img:fav("tetris.com"), desc:"Official version of the classic block-stacking game.", cat:"Puzzle" },
+
+  // ---- 24. More Strategy ----
+  { name:"Age of War",       url:"https://www.crazygames.com/game/age-of-war", img:fav("crazygames.com"), desc:"Evolve your army through the ages to defeat your rival.", cat:"Strategy" },
+  { name:"Diplomacy",        url:"https://www.playdiplomacy.com", img:fav("playdiplomacy.com"), desc:"Classic negotiation-based world-conquest strategy game.", cat:"Strategy" },
+  { name:"Chess24",          url:"https://chess24.com",          img:fav("chess24.com"),   desc:"Play and watch chess with players around the world.", cat:"Strategy" },
+  { name:"Warzone",          url:"https://www.warzone.com",      img:fav("warzone.com"),   desc:"Risk-style multiplayer world-domination strategy game.", cat:"Strategy" },
+  { name:"AI Dungeon",       url:"https://play.aidungeon.com",   img:fav("aidungeon.com"), desc:"An endless AI-generated text adventure you help write.", cat:"Strategy" },
+
+  // ---- 25. More MMORPG ----
+  { name:"Transformice", url:"https://www.transformice.com", img:fav("transformice.com"), desc:"Co-op platformer MMO where mice work together to escape.", cat:"MMORPG" },
+  { name:"Grepolis",     url:"https://www.grepolis.com",     img:fav("grepolis.com"),     desc:"Ancient Greek city-building strategy MMO.", cat:"MMORPG" },
+  { name:"Ikariam",      url:"https://www.ikariam.com",      img:fav("ikariam.com"),      desc:"Browser strategy MMO set in an ancient Mediterranean world.", cat:"MMORPG" },
+  { name:"Tanki Online", url:"https://tankionline.com",      img:fav("tankionline.com"),  desc:"Long-running browser tank battle MMO.", cat:"MMORPG" },
+
+  // ---- 26. More .io / Arcade ----
+  { name:"Uno Online",   url:"https://www.crazygames.com/game/uno-online", img:fav("crazygames.com"), desc:"Classic Uno card game against players online.", cat:"Arcade / .io" },
+  { name:"Ludo King",    url:"https://ludoking.com",         img:fav("ludoking.com"),     desc:"Digital version of the classic board game Ludo.", cat:"Arcade / .io" },
+  { name:"Yahtzee",      url:"https://www.crazygames.com/game/yahtzee", img:fav("crazygames.com"), desc:"Roll the dice and score combinations in this classic game.", cat:"Arcade / .io" },
+  { name:"Snake.io",     url:"https://snake.io",             img:fav("snake.io"),         desc:"Multiplayer take on the classic snake arena game.", cat:"Arcade / .io" },
+  { name:"Rocket Bot Royale", url:"https://www.crazygames.com/game/rocket-bot-royale", img:fav("crazygames.com"), desc:"Battle royale with tanks, rockets, and power-ups.", cat:"Arcade / .io" },
+  { name:"Warfare 1944", url:"https://www.crazygames.com/game/warfare-1944", img:fav("crazygames.com"), desc:"WWII-themed strategy shooter set on a grid battlefield.", cat:"Strategy" },
+
+  // ---- 27. More Cooking ----
+  { name:"Papa's Freezeria", url:"https://www.crazygames.com/game/papas-freezeria", img:fav("crazygames.com"), desc:"Serve up sundaes fast enough to keep customers smiling.", cat:"Cooking" },
+  { name:"Papa's Burgeria",  url:"https://www.crazygames.com/game/papas-burgeria",  img:fav("crazygames.com"), desc:"Build burgers to order in this fast-paced cooking game.", cat:"Cooking" },
+
+  // ---- 28. More Racing ----
+  { name:"Hill Climb Racing", url:"https://www.crazygames.com/game/hill-climb-racing", img:fav("crazygames.com"), desc:"Drive uphill over bumpy terrain without flipping over.", cat:"Racing" },
+  { name:"Extreme Car Driving Simulator", url:"https://www.crazygames.com/game/extreme-car-driving-simulator", img:fav("crazygames.com"), desc:"Free-roam driving simulator with stunts and traffic.", cat:"Racing" },
+  { name:"Rally Racer Dirt",  url:"https://www.crazygames.com/game/rally-racer-dirt", img:fav("crazygames.com"), desc:"Off-road rally racing across dirt tracks.", cat:"Racing" },
+
+  // ---- 29. More Platformer ----
+  { name:"Jetpack Joyride", url:"https://www.crazygames.com/game/jetpack-joyride", img:fav("crazygames.com"), desc:"Fly a jetpack through a lab dodging lasers and missiles.", cat:"Platformer" },
+  { name:"Bob the Robber",  url:"https://www.crazygames.com/game/bob-the-robber",  img:fav("crazygames.com"), desc:"Sneak past guards and cameras as a stealthy robber.", cat:"Platformer" },
+  { name:"Learn to Fly",    url:"https://www.crazygames.com/game/learn-to-fly",    img:fav("crazygames.com"), desc:"Help a penguin build gear to finally learn to fly.", cat:"Platformer" },
+  { name:"Learn to Fly 2",  url:"https://www.crazygames.com/game/learn-to-fly-2",  img:fav("crazygames.com"), desc:"The penguin's back for a bigger, better flight upgrade run.", cat:"Platformer" },
+  { name:"Vex 4",           url:"https://www.crazygames.com/game/vex-4",            img:fav("crazygames.com"), desc:"More precision parkour with deadly traps and tight jumps.", cat:"Platformer" },
+  { name:"Vex 5",           url:"https://www.crazygames.com/game/vex-5",            img:fav("crazygames.com"), desc:"The next chapter of the tricky stickman parkour series.", cat:"Platformer" },
+
+  // ---- 30. More Sports ----
+  { name:"Head Soccer",        url:"https://www.crazygames.com/game/head-soccer", img:fav("crazygames.com"), desc:"Big-headed 1v1 soccer with wild power-ups.", cat:"Sports" },
+  { name:"Volleyball Random",  url:"https://www.crazygames.com/game/volleyball-random", img:fav("crazygames.com"), desc:"Wobbly-physics volleyball with randomized controls.", cat:"Sports" },
+  { name:"Penalty Shooters 2", url:"https://www.crazygames.com/game/penalty-shooters-2", img:fav("crazygames.com"), desc:"Take penalty kicks against goalkeepers from around the world.", cat:"Sports" },
+
+  // ---- 31. More Idle ----
+  { name:"Trimps",            url:"https://trimps.github.io", img:fav("github.io"), desc:"Deep idle strategy game about breeding and battling Trimps.", cat:"Idle" },
+  { name:"AdVenture Capitalist", url:"https://www.crazygames.com/game/adventure-capitalist", img:fav("crazygames.com"), desc:"Build a business empire that keeps earning while you're away.", cat:"Idle" },
+  { name:"Realm Grinder",     url:"https://realmgrinder.com", img:fav("realmgrinder.com"), desc:"Idle fantasy kingdom builder with dozens of upgrade paths.", cat:"Idle" },
+
+  // ---- 32. Party (more) ----
+  { name:"Jackbox.tv", url:"https://jackbox.tv", img:fav("jackbox.tv"), desc:"Join a Jackbox party game using just your phone as controller.", cat:"Creative & Party" },
+
+  // ---- 33. Educational ----
+  { name:"Duolingo",     url:"https://www.duolingo.com",   img:fav("duolingo.com"),   desc:"Bite-sized, game-like lessons for learning new languages.", cat:"Educational" },
+  { name:"Khan Academy", url:"https://www.khanacademy.org", img:fav("khanacademy.org"), desc:"Free interactive lessons across math, science, and more.", cat:"Educational" },
+  { name:"TypingClub",   url:"https://www.typingclub.com", img:fav("typingclub.com"), desc:"Learn touch-typing through fun, gamified lessons.", cat:"Educational" },
+  { name:"Prodigy Math", url:"https://www.prodigygame.com", img:fav("prodigygame.com"), desc:"RPG-style adventure that teaches math along the way.", cat:"Educational" },
+
+  // ---- 34. Sandbox ----
+  { name:"Sandspiel",        url:"https://sandspiel.club", img:fav("sandspiel.club"), desc:"Falling-sand physics playground with fire, water, and more.", cat:"Simulation" },
+  { name:"Minecraft Classic", url:"https://classic.minecraft.net", img:fav("minecraft.net"), desc:"The original free browser version of Minecraft's classic mode.", cat:"Simulation" },
+  { name:"The Powder Game",  url:"https://www.crazygames.com/game/the-powder-game", img:fav("crazygames.com"), desc:"Sandbox physics toy with elements, explosions, and gravity.", cat:"Simulation" },
+
+  // ---- 35. Videos — official channels worth a watch ----
+  { name:"CrazyGames YouTube", url:"https://www.youtube.com/@CrazyGames",  img:fav("youtube.com"), desc:"Trailers and highlight reels for new browser games.", cat:"Videos" },
+  { name:"IGN",                url:"https://www.youtube.com/@IGN",         img:fav("youtube.com"), desc:"Game trailers, reviews, and industry news.", cat:"Videos" },
+  { name:"GameSpot",           url:"https://www.youtube.com/@gamespot",    img:fav("youtube.com"), desc:"Gaming news, reviews, and gameplay videos.", cat:"Videos" },
+  { name:"Markiplier",         url:"https://www.youtube.com/@markiplier",  img:fav("youtube.com"), desc:"Comedic let's-plays and gaming commentary.", cat:"Videos" },
+  { name:"PewDiePie",          url:"https://www.youtube.com/@PewDiePie",   img:fav("youtube.com"), desc:"One of the most-watched gaming and commentary channels.", cat:"Videos" },
+  { name:"jacksepticeye",      url:"https://www.youtube.com/@jacksepticeye", img:fav("youtube.com"), desc:"High-energy gameplay videos and reactions.", cat:"Videos" },
+  { name:"Ninja",               url:"https://www.youtube.com/@Ninja",      img:fav("youtube.com"), desc:"Competitive gameplay from a top battle royale streamer.", cat:"Videos" },
+  { name:"Poki YouTube",       url:"https://www.youtube.com/@PokiGames",   img:fav("youtube.com"), desc:"Gameplay clips and trailers from the Poki library.", cat:"Videos" },
+  { name:"GameGrumps",         url:"https://www.youtube.com/@GameGrumps", img:fav("youtube.com"), desc:"Long-running comedic let's-play duo.", cat:"Videos" },
+  { name:"Dream",               url:"https://www.youtube.com/@Dream",      img:fav("youtube.com"), desc:"Minecraft-focused gameplay and challenge videos.", cat:"Videos" },
+
+  // ---- 36. More Shooter / Battle Royale ----
+  { name:"Battle Boots",   url:"https://www.crazygames.com/game/battle-boots", img:fav("crazygames.com"), desc:"Wobbly-physics boot-throwing multiplayer brawl.", cat:"Shooter" },
+  { name:"Pixel Warfare",  url:"https://www.crazygames.com/game/pixel-warfare", img:fav("crazygames.com"), desc:"Blocky multiplayer FPS across several arenas.", cat:"Shooter" },
+  { name:"Bullet Force",   url:"https://www.crazygames.com/game/bullet-force", img:fav("crazygames.com"), desc:"Fast-paced 3D multiplayer FPS with vehicles.", cat:"Shooter" },
+  { name:"Garden Warfare Clone", url:"https://www.crazygames.com/game/plants-vs-zombies", img:fav("crazygames.com"), desc:"Defend your yard from waves of goofy invaders.", cat:"Survival" },
+
+  // ---- 37. More Idle / Clicker ----
+  { name:"Idle Dice",      url:"https://www.crazygames.com/game/idle-dice",  img:fav("crazygames.com"), desc:"Roll dice automatically to build an ever-growing score.", cat:"Idle" },
+  { name:"Egg, Inc.",      url:"https://www.crazygames.com/game/egg-inc",    img:fav("crazygames.com"), desc:"Idle tycoon game about running a giant egg farm empire.", cat:"Idle" },
+
+  // ---- 38. More Board / Card ----
+  { name:"Uno Freak",      url:"https://www.crazygames.com/game/uno-freak",   img:fav("crazygames.com"), desc:"Fast online Uno with friends or strangers.", cat:"Card Games" },
+  { name:"Backgammon Online", url:"https://www.crazygames.com/game/backgammon", img:fav("crazygames.com"), desc:"Classic dice-and-checkers board game online.", cat:"Board Games" },
+  { name:"Mahjong",        url:"https://www.crazygames.com/game/mahjong",    img:fav("crazygames.com"), desc:"Match matching tiles to clear the classic mahjong board.", cat:"Board Games" },
+
+  // ---- 39. More Puzzle ----
+  { name:"Connect 4",      url:"https://www.crazygames.com/game/connect-4",  img:fav("crazygames.com"), desc:"Classic drop-and-connect four-in-a-row game.", cat:"Puzzle" },
+  { name:"Unblock Me",     url:"https://www.crazygames.com/game/unblock-me", img:fav("crazygames.com"), desc:"Slide blocks out of the way to free the red piece.", cat:"Puzzle" },
+  { name:"Word Wipe",      url:"https://www.crazygames.com/game/word-wipe",  img:fav("crazygames.com"), desc:"Swipe letters to build words before time runs out.", cat:"Brain & Word" },
+
+  // ---- 40. More Racing / Arcade ----
+  { name:"Crazy Taxi Style Rush", url:"https://www.crazygames.com/game/city-taxi-driving", img:fav("crazygames.com"), desc:"Pick up fares and race the clock through busy streets.", cat:"Racing" },
+  { name:"Parking Fury",   url:"https://www.crazygames.com/game/parking-fury", img:fav("crazygames.com"), desc:"Tight-turn parking challenges against the clock.", cat:"Racing" },
+
+  // ---- 41. More Simulation ----
+  { name:"House Flipper Clone", url:"https://www.crazygames.com/game/house-flipper", img:fav("crazygames.com"), desc:"Clean, fix, and renovate houses to sell for profit.", cat:"Simulation" },
+  { name:"Farming Simulator Lite", url:"https://www.crazygames.com/game/farming-simulator", img:fav("crazygames.com"), desc:"Plant, harvest, and manage your own virtual farm.", cat:"Simulation" },
+
+  // ---- 42. More Quiz / Geography ----
+  { name:"Sporcle",        url:"https://www.sporcle.com",     img:fav("sporcle.com"), desc:"Thousands of user-made trivia quizzes on every topic.", cat:"Quiz & Trivia" },
+  { name:"Seterra",        url:"https://online.seterra.com",  img:fav("seterra.com"), desc:"Interactive map quizzes to learn world geography.", cat:"Geography" },
+
+];
+
+function malSearch(title){ return "https://myanimelist.net/anime.php?q=" + encodeURIComponent(title); }
+
+const ANIME_SEASON_LABEL = "Summer 2026";
+const ANIME = [
+  { name:"Mushoku Tensei: Jobless Reincarnation S3", desc:"The isekai fantasy epic continues as Rudeus keeps growing into the mage his past self never became.", url:malSearch("Mushoku Tensei Jobless Reincarnation Season 3") },
+  { name:"Bleach: Thousand-Year Blood War — The Calamity", desc:"The final arc of Bleach's Thousand-Year Blood War saga, bringing the manga's climax to the screen.", url:malSearch("Bleach Thousand-Year Blood War The Calamity") },
+  { name:"Grand Blue Dreaming Season 3", desc:"More diving-club chaos and comedy from the beloved slice-of-life series.", url:malSearch("Grand Blue Dreaming Season 3") },
+  { name:"Saga of Tanya the Evil Season 2", desc:"The ruthless magical military commander returns for a new campaign.", url:malSearch("Saga of Tanya the Evil Season 2") },
+  { name:"THE GHOST IN THE SHELL", desc:"A fresh take on the influential cyberpunk franchise about identity and technology.", url:malSearch("Ghost in the Shell 2026") },
+  { name:"Clevatess Season 2", desc:"The demon-lord fantasy series continues its story of an unlikely hero.", url:malSearch("Clevatess Season 2") },
+  { name:"Magilumiere Magical Girls Inc. Season 2", desc:"Magical girls with day jobs return for more corporate-meets-magic adventures.", url:malSearch("Magilumiere Magical Girls Inc Season 2") },
+  { name:"Skeleton Knight in Another World II", desc:"The armored skeleton hero is back for another isekai adventure.", url:malSearch("Skeleton Knight in Another World II") },
+  { name:"The 100 Girlfriends Season 3", desc:"The romantic comedy series returns for a third season of its over-the-top harem antics.", url:malSearch("The 100 Girlfriends Who Really Love You Season 3") },
+  { name:"Smoking Behind the Supermarket with You", desc:"A quiet, character-driven slice-of-life romance continuing this season.", url:malSearch("Smoking Behind the Supermarket with You") },
+];
+
+  const COLORS = ["#00c2cb","#ff3d78","#ffb238","#8890a0","#7c5cff"];
+
+  const CAT_FLAVOR = {
+    "Shooter":"Jump straight into fast browser combat.",
+    "Battle Royale":"Land, loot, and fight to be the last one standing.",
+    "Racing":"Push the pedal and chase the perfect lap.",
+    "Puzzle":"Sharpen your mind one clever move at a time.",
+    "Strategy":"Plan, build, and outsmart rivals move by move.",
+    "MMORPG":"Level up and explore a persistent online world.",
+    "Card Games":"Classic card-table fun, reshuffled for the browser.",
+    "Board Games":"Timeless tabletop strategy, playable with anyone.",
+    "Brain & Word":"Train your brain with quick daily challenges.",
+    "Sports":"Arcade sports action with quick matches and big plays.",
+    "Arcade / .io":"Simple to learn, addictive to master.",
+    "Space":"Blast off into fast-paced cosmic combat.",
+    "Survival":"Gather, craft, and outlast everyone else.",
+    "Idle":"Sit back and watch your empire grow.",
+    "Creative & Party":"Perfect for laughs with friends online.",
+    "Platformer":"Jump, dash, and dodge through tricky levels.",
+    "Music & Rhythm":"Stay on beat and chase a perfect combo.",
+    "Simulation":"Mess around in a playful little world of your own.",
+    "Cooking":"Keep the orders flowing and the customers smiling.",
+    "Quiz & Trivia":"Test what you know and challenge your friends.",
+    "Geography":"See how well you really know the map.",
+    "Utility":"A handy tool worth bookmarking.",
+    "Game Portals":"A whole library of instant-play games in one destination.",
+    "Educational":"Learn something new while you play.",
+    "Videos":"Kick back and watch — no controller required."
+  };
+
+  const CAT_ICON = {
+    "Shooter":"🔫", "Battle Royale":"🪂", "Racing":"🏎️", "Puzzle":"🧩", "Strategy":"♟️",
+    "MMORPG":"⚔️", "Card Games":"🃏", "Board Games":"🎲", "Brain & Word":"🧠", "Sports":"🏀",
+    "Arcade / .io":"👾", "Space":"🚀", "Survival":"🏕️", "Idle":"⏳", "Creative & Party":"🎨",
+    "Platformer":"🕹️", "Music & Rhythm":"🎵", "Simulation":"🌍", "Cooking":"🍳", "Quiz & Trivia":"❓",
+    "Geography":"🗺️", "Utility":"🔧", "Game Portals":"🏪", "Educational":"📚", "Videos":"📺"
+  };
+
+  const MULTIPLAYER_CATS = new Set(["Shooter","Battle Royale","MMORPG","Arcade / .io","Survival","Creative & Party","Game Portals"]);
+  const TWO_PLAYER_NAMES = new Set(["Rooftop Snipers","Basket Random","Boxing Random","Tank Trouble","Fireboy and Watergirl","Getaway Shootout","Volleyball Random","Head Soccer","Battle Boots"]);
+
+  function inferTags(item){
+    const tags = [];
+    tags.push(MULTIPLAYER_CATS.has(item.cat) ? "Multiplayer" : "Singleplayer");
+    if(TWO_PLAYER_NAMES.has(item.name)) tags.push("2-Player");
+    if(item.cat === "Videos") tags.push("Video");
+    return tags;
+  }
+
+  const NEW_ITEM_THRESHOLD = ITEMS.length - 30; // last 30 added items are tagged NEW
+  function isNewItem(item){ return ITEMS.indexOf(item) >= NEW_ITEM_THRESHOLD; }
+
+  const SITE_LAST_UPDATED = "July 26, 2026";
+
+  function placeholderTile(name, i){
+    const c = COLORS[i % COLORS.length];
+    const letter = (name || "?").trim().charAt(0).toUpperCase();
+    return "data:image/svg+xml;utf8," + encodeURIComponent(`
+      <svg xmlns='http://www.w3.org/2000/svg' width='400' height='400'>
+        <rect width='100%' height='100%' fill='#1e222b'/>
+        <text x='50%' y='55%' font-family='Arial' font-size='150' font-weight='bold'
+          fill='${c}' text-anchor='middle' dominant-baseline='middle' opacity='0.9'>${letter}</text>
+      </svg>`);
+  }
+
+  function fullDesc(item){
+    const flavor = CAT_FLAVOR[item.cat] || "Playable right in your browser, any time.";
+    return item.desc + " " + flavor + " No downloads or installs — just click Play and go.";
+  }
+
+  const grid          = document.getElementById('grid');
+  const overlay       = document.getElementById('overlay');
+  const detailImg     = document.getElementById('detailImg');
+  const detailTitle   = document.getElementById('detailTitle');
+  const detailDesc    = document.getElementById('detailDesc');
+  const detailUrlLbl  = document.getElementById('detailUrlLabel');
+  const detailCatLbl  = document.getElementById('detailCatLabel');
+  const playBtn       = document.getElementById('playBtn');
+  const closeBtn      = document.getElementById('closeBtn');
+  const countBadge    = document.getElementById('countBadge');
+  const visibleCount  = document.getElementById('visibleCount');
+  const searchInput   = document.getElementById('searchInput');
+  const chipRow       = document.getElementById('chipRow');
+  const tagRow        = document.getElementById('tagRow');
+  const sortSelect    = document.getElementById('sortSelect');
+  const surpriseBtn   = document.getElementById('surpriseBtn');
+  const ratingStarsEl = document.getElementById('ratingStars');
+  const continueSection = document.getElementById('continueSection');
+  const continueStrip   = document.getElementById('continueStrip');
+
+  let activeCat = "All";
+  let activeTag = "All";
+  let sortMode  = "name";
+  let currentDetailItem = null;
+
+  /* -------------------- tiny persistence helpers -------------------- */
+  function loadJSON(key, fallback){
+    try{ const v = JSON.parse(localStorage.getItem(key)); return v || fallback; }catch(e){ return fallback; }
+  }
+  function saveJSON(key, val){ try{ localStorage.setItem(key, JSON.stringify(val)); }catch(e){} }
+
+  let favorites  = loadJSON('bs111_favs', []);         // array of names
+  let ratings    = loadJSON('bs111_ratings', {});       // name -> 1-5
+  let playCounts = loadJSON('bs111_playcounts', {});    // name -> count
+  let recent     = loadJSON('bs111_recent', []);        // array of names, most recent first
+
+  function isFav(name){ return favorites.includes(name); }
+  function toggleFav(name){
+    favorites = isFav(name) ? favorites.filter(n => n !== name) : [name, ...favorites];
+    saveJSON('bs111_favs', favorites);
+  }
+  function recordPlay(name){
+    playCounts[name] = (playCounts[name] || 0) + 1;
+    saveJSON('bs111_playcounts', playCounts);
+    recent = [name, ...recent.filter(n => n !== name)].slice(0, 8);
+    saveJSON('bs111_recent', recent);
+    renderContinue();
+  }
+  function setRating(name, val){
+    ratings[name] = val;
+    saveJSON('bs111_ratings', ratings);
+  }
+
+  let notes = loadJSON('bs111_notes', {});   // name -> text
+  function saveNote(name, text){
+    if(text && text.trim().length) notes[name] = text;
+    else delete notes[name];
+    saveJSON('bs111_notes', notes);
+  }
+
+  function shortHost(url){
+    try{ return new URL(url).hostname.replace('www.',''); }catch(e){ return url; }
+  }
+
+  function buildChips(){
+    const cats = ["All", "★ Favorites", ...new Set(ITEMS.map(i => i.cat))];
+    chipRow.innerHTML = "";
+    cats.forEach(c => {
+      const chip = document.createElement('div');
+      chip.className = 'chip' + (c === activeCat ? ' active' : '');
+      const icon = CAT_ICON[c] ? CAT_ICON[c] + ' ' : '';
+      chip.textContent = icon + c;
+      chip.addEventListener('click', () => {
+        activeCat = c;
+        buildChips();
+        render(searchInput.value);
+      });
+      chipRow.appendChild(chip);
+    });
+  }
+
+  function buildTagRow(){
+    const tags = ["All", "Multiplayer", "Singleplayer", "2-Player", "🆕 New"];
+    tagRow.innerHTML = "";
+    tags.forEach(t => {
+      const chip = document.createElement('div');
+      chip.className = 'chip' + (t === activeTag ? ' active' : '');
+      chip.textContent = t;
+      chip.addEventListener('click', () => {
+        activeTag = t;
+        buildTagRow();
+        render(searchInput.value);
+      });
+      tagRow.appendChild(chip);
+    });
+  }
+
+  function matches(item, f){
+    if(!f) return true;
+    return item.name.toLowerCase().includes(f)
+        || item.desc.toLowerCase().includes(f)
+        || item.cat.toLowerCase().includes(f);
+  }
+
+  function matchesTag(item){
+    if(activeTag === "All") return true;
+    if(activeTag === "🆕 New") return isNewItem(item);
+    return inferTags(item).includes(activeTag);
+  }
+
+  function sortedItems(list){
+    const arr = list.slice();
+    if(sortMode === "name") arr.sort((a,b) => a.item.name.localeCompare(b.item.name));
+    else if(sortMode === "cat") arr.sort((a,b) => a.item.cat.localeCompare(b.item.cat) || a.item.name.localeCompare(b.item.name));
+    else if(sortMode === "plays") arr.sort((a,b) => (playCounts[b.item.name]||0) - (playCounts[a.item.name]||0) || a.item.name.localeCompare(b.item.name));
+    return arr;
+  }
+
+  function makeTile(item, i, small){
+    const tile = document.createElement('div');
+    tile.className = 'tile';
+    tile.dataset.name = item.name;
+
+    if(isNewItem(item)){
+      const badge = document.createElement('div');
+      badge.className = 'new-badge';
+      badge.textContent = 'NEW';
+      tile.appendChild(badge);
+    }
+
+    const star = document.createElement('div');
+    star.className = 'tile-star' + (isFav(item.name) ? ' active' : '');
+    star.textContent = isFav(item.name) ? '★' : '☆';
+    star.title = 'Toggle favorite';
+    star.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleFav(item.name);
+      star.classList.toggle('active');
+      star.textContent = isFav(item.name) ? '★' : '☆';
+      if(activeCat === "★ Favorites") render(searchInput.value);
+    });
+
+    const img = document.createElement('img');
+    img.loading = 'lazy';
+    img.src = item.img && item.img.length ? item.img : placeholderTile(item.name, i);
+    img.alt = item.name;
+    img.onerror = () => { img.src = placeholderTile(item.name, i); };
+
+    const info = document.createElement('div');
+    info.className = 'tile-info';
+    const rating = ratings[item.name];
+    const icon = CAT_ICON[item.cat] || '';
+    info.innerHTML = `<div class="tile-name">${item.name}</div>`
+      + `<div class="tile-sub">${icon} ${item.cat} · ${shortHost(item.url)}</div>`
+      + (rating ? `<div class="tile-rating">${'★'.repeat(rating)}${'☆'.repeat(5-rating)}</div>` : '');
+
+    tile.appendChild(star);
+    tile.appendChild(img);
+    tile.appendChild(info);
+    tile.addEventListener('click', () => openDetail(item, i));
+    attachTilt(tile);
+    return tile;
+  }
+
+  function render(filterText = ""){
+    grid.innerHTML = "";
+    const f = filterText.trim().toLowerCase();
+    let shown = 0;
+    let pool = ITEMS.map((item, i) => ({item, i})).filter(({item}) => {
+      if(!matches(item, f)) return false;
+      if(!matchesTag(item)) return false;
+      if(activeCat === "★ Favorites") return isFav(item.name);
+      if(activeCat !== "All" && item.cat !== activeCat) return false;
+      return true;
+    });
+    pool = sortedItems(pool);
+    pool.forEach(({item, i}) => {
+      shown++;
+      const tile = makeTile(item, i, false);
+      tile.style.animationDelay = (0.03 + Math.min(shown,20) * 0.03) + 's';
+      grid.appendChild(tile);
+    });
+    visibleCount.textContent = shown + " shown";
+    countBadge.textContent = ITEMS.length + " items";
+    buildKbdList();
+  }
+
+  function renderContinue(){
+    const items = recent.map(name => ITEMS.find(i => i.name === name)).filter(Boolean);
+    if(!items.length){ continueSection.style.display = 'none'; return; }
+    continueSection.style.display = 'block';
+    continueStrip.innerHTML = "";
+    items.forEach(item => {
+      const i = ITEMS.indexOf(item);
+      const tile = makeTile(item, i, true);
+      continueStrip.appendChild(tile);
+    });
+  }
+
+  /* -------------------- 3D tilt-on-hover for tiles -------------------- */
+  function attachTilt(tile){
+    const strength = 12;
+    tile.addEventListener('mousemove', (e) => {
+      const r = tile.getBoundingClientRect();
+      const x = (e.clientX - r.left) / r.width - 0.5;
+      const y = (e.clientY - r.top) / r.height - 0.5;
+      tile.style.transform = `translateY(-5px) rotateX(${(-y*strength).toFixed(2)}deg) rotateY(${(x*strength).toFixed(2)}deg)`;
+    });
+    tile.addEventListener('mouseleave', () => {
+      tile.style.transform = 'translateY(0) rotateX(0) rotateY(0)';
+    });
+  }
+
+  function renderRatingStars(item){
+    ratingStarsEl.innerHTML = "";
+    const current = ratings[item.name] || 0;
+    for(let s = 1; s <= 5; s++){
+      const star = document.createElement('span');
+      star.className = 'rstar' + (s <= current ? ' filled' : '');
+      star.textContent = '★';
+      star.addEventListener('click', () => {
+        setRating(item.name, s);
+        renderRatingStars(item);
+        render(searchInput.value);
+      });
+      ratingStarsEl.appendChild(star);
+    }
+  }
+
+  const detailUpdatedEl = document.getElementById('detailUpdated');
+  const notesInput = document.getElementById('notesInput');
+
+  function openDetail(item, i){
+    currentDetailItem = item;
+    detailImg.src = item.img && item.img.length ? item.img : placeholderTile(item.name, i);
+    detailTitle.textContent = item.name;
+    detailDesc.textContent = fullDesc(item);
+    detailUrlLbl.textContent = shortHost(item.url);
+    detailCatLbl.textContent = item.cat;
+    detailUpdatedEl.textContent = SITE_LAST_UPDATED;
+    playBtn.href = item.url;
+    renderRatingStars(item);
+    notesInput.value = notes[item.name] || '';
+    stopPreview();
+    overlay.classList.add('show');
+  }
+
+  notesInput.addEventListener('input', () => {
+    if(currentDetailItem) saveNote(currentDetailItem.name, notesInput.value);
+  });
+
+  const shareBtn = document.getElementById('shareBtn');
+  shareBtn.addEventListener('click', async () => {
+    if(!currentDetailItem) return;
+    const text = `Check out ${currentDetailItem.name} on Bs111 G-Store: ${currentDetailItem.url}`;
+    try{
+      if(navigator.share){ await navigator.share({ title: currentDetailItem.name, text, url: currentDetailItem.url }); }
+      else{ await navigator.clipboard.writeText(text); flashShareBtn(); }
+    }catch(e){}
+  });
+  function flashShareBtn(){
+    const orig = shareBtn.textContent;
+    shareBtn.textContent = '✅ Copied!';
+    setTimeout(() => { shareBtn.textContent = orig; }, 1600);
+  }
+
+  function renderAnime(){
+    const wrap = document.getElementById('animeGrid');
+    document.getElementById('animeUpdated').textContent = ANIME_SEASON_LABEL;
+    wrap.innerHTML = "";
+    ANIME.forEach((a, i) => {
+      const tile = document.createElement('div');
+      tile.className = 'tile';
+      const img = document.createElement('img');
+      img.src = placeholderTile(a.name, i);
+      img.alt = a.name;
+      const info = document.createElement('div');
+      info.className = 'tile-info';
+      info.innerHTML = `<div class="tile-name">${a.name}</div><div class="tile-sub" style="white-space:normal; line-height:1.35;">${a.desc}</div>`;
+      tile.appendChild(img);
+      tile.appendChild(info);
+      tile.addEventListener('click', () => window.open(a.url, '_blank', 'noopener,noreferrer'));
+      attachTilt(tile);
+      wrap.appendChild(tile);
+    });
+  }
+
+  function renderFeatured(){
+    const featuredCard = document.getElementById('featuredCard');
+    const dayIndex = Math.floor(Date.now() / 86400000) % ITEMS.length;
+    const item = ITEMS[dayIndex];
+    featuredCard.innerHTML = "";
+    const img = document.createElement('img');
+    img.loading = 'lazy';
+    img.src = item.img && item.img.length ? item.img : placeholderTile(item.name, dayIndex);
+    img.onerror = () => { img.src = placeholderTile(item.name, dayIndex); };
+    const text = document.createElement('div');
+    text.innerHTML = `<div class="f-name">${CAT_ICON[item.cat]||''} ${item.name}</div><div class="f-desc">${item.desc}</div>`;
+    const cta = document.createElement('div');
+    cta.className = 'f-cta';
+    cta.textContent = '▶ Play';
+    featuredCard.appendChild(img);
+    featuredCard.appendChild(text);
+    featuredCard.appendChild(cta);
+    featuredCard.onclick = () => openDetail(item, dayIndex);
+  }
+
+  /* -------------------- keyboard navigation -------------------- */
+  let kbdTiles = [];
+  let kbdIndex = -1;
+  function buildKbdList(){
+    kbdTiles = Array.from(grid.children);
+    kbdIndex = -1;
+  }
+  function kbdColumns(){
+    if(!kbdTiles.length) return 1;
+    const gridWidth = grid.clientWidth;
+    const tileWidth = kbdTiles[0].offsetWidth + 20;
+    return Math.max(1, Math.round(gridWidth / tileWidth));
+  }
+  function setKbdFocus(idx){
+    kbdTiles.forEach(t => t.classList.remove('kbd-focus'));
+    if(idx < 0 || idx >= kbdTiles.length) return;
+    kbdIndex = idx;
+    const t = kbdTiles[idx];
+    t.classList.add('kbd-focus');
+    t.scrollIntoView({ block:'nearest', behavior:'smooth' });
+  }
+  document.addEventListener('keydown', (e) => {
+    if(overlay.classList.contains('show')){
+      if(e.key === 'Escape'){ overlay.classList.remove('show'); stopPreview(); }
+      return;
+    }
+    if(document.getElementById('view-home').classList.contains('active') && kbdTiles.length){
+      const cols = kbdColumns();
+      if(e.key === 'ArrowRight'){ e.preventDefault(); setKbdFocus(Math.min(kbdTiles.length-1, kbdIndex+1)); }
+      else if(e.key === 'ArrowLeft'){ e.preventDefault(); setKbdFocus(Math.max(0, kbdIndex-1)); }
+      else if(e.key === 'ArrowDown'){ e.preventDefault(); setKbdFocus(Math.min(kbdTiles.length-1, (kbdIndex<0?0:kbdIndex)+cols)); }
+      else if(e.key === 'ArrowUp'){ e.preventDefault(); setKbdFocus(Math.max(0, kbdIndex-cols)); }
+      else if(e.key === 'Enter' && kbdIndex >= 0){ kbdTiles[kbdIndex].click(); }
+    }
+  });
+
+  /* -------------------- live preview (best-effort, many sites block embedding) -------------------- */
+  const previewFrame  = document.getElementById('previewFrame');
+  const previewStatus = document.getElementById('previewStatus');
+  const previewBtn    = document.getElementById('previewBtn');
+  let previewTimer = null;
+  let previewOn = false;
+
+  function stopPreview(){
+    previewOn = false;
+    previewBtn.classList.remove('active');
+    previewBtn.textContent = '👁 Live Preview';
+    previewFrame.style.display = 'none';
+    previewStatus.style.display = 'none';
+    previewFrame.src = 'about:blank';
+    detailImg.style.display = 'block';
+    if(previewTimer){ clearTimeout(previewTimer); previewTimer = null; }
+  }
+  function startPreview(){
+    if(!currentDetailItem) return;
+    previewOn = true;
+    previewBtn.classList.add('active');
+    previewBtn.textContent = '✕ Stop Preview';
+    detailImg.style.display = 'none';
+    previewStatus.style.display = 'flex';
+    previewStatus.textContent = '⏳ Loading live preview…';
+    previewFrame.style.display = 'block';
+    previewFrame.src = currentDetailItem.url;
+    previewTimer = setTimeout(() => {
+      previewStatus.textContent = "Preview may be blocked by this site's security settings — tap Play to open it in a new tab instead.";
+    }, 3500);
+    previewFrame.onload = () => { previewStatus.style.display = 'none'; };
+  }
+  previewBtn.addEventListener('click', () => { previewOn ? stopPreview() : startPreview(); });
+
+  playBtn.addEventListener('click', () => { if(currentDetailItem) recordPlay(currentDetailItem.name); });
+  closeBtn.addEventListener('click', () => { overlay.classList.remove('show'); stopPreview(); });
+  overlay.addEventListener('click', (e) => { if(e.target === overlay){ overlay.classList.remove('show'); stopPreview(); } });
+  searchInput.addEventListener('input', (e) => render(e.target.value));
+  sortSelect.addEventListener('change', (e) => { sortMode = e.target.value; render(searchInput.value); });
+  surpriseBtn.addEventListener('click', () => {
+    const i = Math.floor(Math.random() * ITEMS.length);
+    openDetail(ITEMS[i], i);
+  });
+
+  /* "/" focuses search unless already typing somewhere */
+  document.addEventListener('keydown', (e) => {
+    if(e.key === '/' && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA'){
+      e.preventDefault();
+      goto('home');
+      searchInput.focus();
+    }
+  });
+
+  /* -------------------- view / nav switching -------------------- */
+  function goto(view){
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    document.getElementById('view-' + view).classList.add('active');
+    document.querySelectorAll('[data-nav]').forEach(el => el.classList.toggle('active', el.dataset.nav === view));
+    if(view === 'about') buildMyActivity();
+  }
+  document.querySelectorAll('[data-nav]').forEach(el => {
+    el.addEventListener('click', () => {
+      goto(el.dataset.nav);
+      if(el.dataset.focusSearch) setTimeout(() => searchInput.focus(), 50);
+    });
+  });
+
+  /* -------------------- About page stats -------------------- */
+  function buildStats(){
+    const cats = new Set(ITEMS.map(i => i.cat)).size;
+    const stats = [
+      { num: ITEMS.length + "+", lbl:"Games & sites" },
+      { num: cats, lbl:"Categories" },
+      { num:"0", lbl:"Downloads needed" },
+      { num:"24/7", lbl:"Always open" },
+    ];
+    const row = document.getElementById('statsRow');
+    row.innerHTML = "";
+    stats.forEach(s => {
+      const d = document.createElement('div');
+      d.className = 'stat';
+      d.innerHTML = `<div class="num">${s.num}</div><div class="lbl">${s.lbl}</div>`;
+      row.appendChild(d);
+    });
+    document.getElementById('aboutUpdated').textContent = SITE_LAST_UPDATED;
+  }
+
+  function buildMyActivity(){
+    const totalPlays = Object.values(playCounts).reduce((a,b) => a+b, 0);
+    const ratedCount = Object.keys(ratings).length;
+    const catCounts = {};
+    Object.keys(playCounts).forEach(name => {
+      const it = ITEMS.find(i => i.name === name);
+      if(it) catCounts[it.cat] = (catCounts[it.cat]||0) + playCounts[name];
+    });
+    let topCat = "—";
+    let max = 0;
+    Object.keys(catCounts).forEach(c => { if(catCounts[c] > max){ max = catCounts[c]; topCat = c; } });
+    const stats = [
+      { num: totalPlays, lbl:"Games played" },
+      { num: favorites.length, lbl:"Favorites" },
+      { num: ratedCount, lbl:"Games rated" },
+      { num: topCat, lbl:"Top category" },
+    ];
+    const row = document.getElementById('myActivityRow');
+    row.innerHTML = "";
+    stats.forEach(s => {
+      const d = document.createElement('div');
+      d.className = 'stat';
+      d.innerHTML = `<div class="num">${s.num}</div><div class="lbl">${s.lbl}</div>`;
+      row.appendChild(d);
+    });
+  }
+
+  document.getElementById('exportBtn').addEventListener('click', () => {
+    const data = { favorites, ratings, playCounts, recent, notes, exportedAt: new Date().toISOString() };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type:'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'bs111-gstore-backup.json';
+    a.click();
+  });
+  const importFile = document.getElementById('importFile');
+  document.getElementById('importBtn').addEventListener('click', () => importFile.click());
+  importFile.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try{
+        const data = JSON.parse(reader.result);
+        favorites  = data.favorites  || favorites;
+        ratings    = data.ratings    || ratings;
+        playCounts = data.playCounts || playCounts;
+        recent     = data.recent     || recent;
+        notes      = data.notes      || notes;
+        saveJSON('bs111_favs', favorites);
+        saveJSON('bs111_ratings', ratings);
+        saveJSON('bs111_playcounts', playCounts);
+        saveJSON('bs111_recent', recent);
+        saveJSON('bs111_notes', notes);
+        render(searchInput.value);
+        renderContinue();
+        buildMyActivity();
+      }catch(err){ alert('That file could not be read as a valid backup.'); }
+    };
+    reader.readAsText(file);
+  });
+
+  /* -------------------- theme + accent controls -------------------- */
+  const themeToggle = document.getElementById('themeToggle');
+  const savedTheme = localStorage.getItem('bs111_theme') || 'dark';
+  document.documentElement.setAttribute('data-theme', savedTheme);
+  themeToggle.textContent = savedTheme === 'light' ? '☀️' : '🌙';
+  themeToggle.addEventListener('click', () => {
+    const now = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', now);
+    themeToggle.textContent = now === 'light' ? '☀️' : '🌙';
+    localStorage.setItem('bs111_theme', now);
+  });
+
+  const savedAccent = localStorage.getItem('bs111_accent');
+  if(savedAccent){ document.documentElement.style.setProperty('--cyan', savedAccent); }
+  document.querySelectorAll('.accent-dot').forEach(dot => {
+    if(savedAccent && dot.dataset.accent === savedAccent) dot.classList.add('active');
+    else if(!savedAccent && dot === document.querySelector('.accent-dot')) dot.classList.add('active');
+    else dot.classList.remove('active');
+    dot.addEventListener('click', () => {
+      document.documentElement.style.setProperty('--cyan', dot.dataset.accent);
+      localStorage.setItem('bs111_accent', dot.dataset.accent);
+      document.querySelectorAll('.accent-dot').forEach(d => d.classList.remove('active'));
+      dot.classList.add('active');
+    });
+  });
+
+  /* -------------------- bell / roadmap panel -------------------- */
+  const ROADMAP = [
+    { tag:"new",  txt:"210+ games & sites, plus a Videos category." },
+    { tag:"new",  txt:"🎌 New Anime section — currently-airing titles, updated by season." },
+    { tag:"new",  txt:"🏷️ Tags (Multiplayer / 2-Player) alongside categories." },
+    { tag:"new",  txt:"🌟 Featured Today — a new pick every day." },
+    { tag:"new",  txt:"📝 Private notes + 🔗 Share on every game." },
+    { tag:"new",  txt:"⌨️ Keyboard navigation (arrow keys, Enter, Esc)." },
+    { tag:"new",  txt:"📊 My Activity stats + ⬇️⬆️ export/import your data." },
+    { tag:"soon", txt:"User accounts with cloud-synced favorites." },
+    { tag:"soon", txt:"Even more games added every update." },
+  ];
+  const roadmapList = document.getElementById('roadmapList');
+  ROADMAP.forEach(r => {
+    const row = document.createElement('div');
+    row.className = 'roadmap-item';
+    row.innerHTML = `<span class="tag ${r.tag}">${r.tag === 'new' ? 'NEW' : 'SOON'}</span><span class="txt">${r.txt}</span>`;
+    roadmapList.appendChild(row);
+  });
+  const bellBtn = document.getElementById('bellBtn');
+  const bellPanel = document.getElementById('bellPanel');
+  bellBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    bellPanel.classList.toggle('show');
+  });
+  document.addEventListener('click', (e) => {
+    if(!bellPanel.contains(e.target) && e.target !== bellBtn) bellPanel.classList.remove('show');
+  });
+
+  /* -------------------- welcome modal (once ever) -------------------- */
+  const welcomeOverlay = document.getElementById('welcomeOverlay');
+  const welcomeGo = document.getElementById('welcomeGo');
+  if(!localStorage.getItem('bs111_seen_welcome')){
+    setTimeout(() => welcomeOverlay.classList.add('show'), 300);
+  }
+  function dismissWelcome(){
+    welcomeOverlay.classList.remove('show');
+    localStorage.setItem('bs111_seen_welcome', '1');
+    maybeShowToast();
+  }
+  welcomeGo.addEventListener('click', dismissWelcome);
+  welcomeOverlay.addEventListener('click', (e) => { if(e.target === welcomeOverlay) dismissWelcome(); });
+
+  /* -------------------- update toast (once per session) -------------------- */
+  const updateToast = document.getElementById('updateToast');
+  const toastClose = document.getElementById('toastClose');
+  function maybeShowToast(){
+    if(sessionStorage.getItem('bs111_seen_toast')) return;
+    setTimeout(() => updateToast.classList.add('show'), 500);
+    sessionStorage.setItem('bs111_seen_toast', '1');
+    setTimeout(() => updateToast.classList.remove('show'), 7000);
+  }
+  toastClose.addEventListener('click', () => updateToast.classList.remove('show'));
+  if(localStorage.getItem('bs111_seen_welcome')){
+    setTimeout(maybeShowToast, 400);
+  }
+
+  /* -------------------- top banner (shows once per site version) -------------------- */
+  const topBanner = document.getElementById('topBanner');
+  const topBannerClose = document.getElementById('topBannerClose');
+  const topBannerLink = document.getElementById('topBannerLink');
+  const BANNER_VERSION_KEY = 'bs111_seen_banner_' + SITE_LAST_UPDATED;
+  function dismissBanner(){
+    topBanner.classList.remove('show');
+    localStorage.setItem(BANNER_VERSION_KEY, '1');
+  }
+  if(!localStorage.getItem(BANNER_VERSION_KEY)){
+    setTimeout(() => topBanner.classList.add('show'), 1200);
+    setTimeout(dismissBanner, 9000);
+  }
+  topBannerClose.addEventListener('click', dismissBanner);
+  topBannerLink.addEventListener('click', () => { dismissBanner(); bellPanel.classList.add('show'); });
+
+  buildChips();
+  buildTagRow();
+  render();
+  buildStats();
+  renderContinue();
+  renderFeatured();
+  renderAnime();
+
+  /* -------------------- real 3D particle background (three.js, with 2D fallback) -------------------- */
+  (function(){
+    const canvas = document.getElementById('depthCanvas');
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    let mx = 0, my = 0;
+    window.addEventListener('mousemove', (e) => {
+      mx = (e.clientX / window.innerWidth - 0.5);
+      my = (e.clientY / window.innerHeight - 0.5);
+    });
+
+    if(window.THREE){
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 1000);
+      camera.position.z = 60;
+      const renderer = new THREE.WebGLRenderer({ canvas, alpha:true, antialias:true });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setSize(window.innerWidth, window.innerHeight);
+
+      const COUNT = 420;
+      const positions = new Float32Array(COUNT * 3);
+      const colors = new Float32Array(COUNT * 3);
+      const palette = [[0,0.76,0.80],[1,0.24,0.47],[1,0.70,0.22]];
+      for(let i = 0; i < COUNT; i++){
+        positions[i*3]   = (Math.random()-0.5) * 220;
+        positions[i*3+1] = (Math.random()-0.5) * 140;
+        positions[i*3+2] = (Math.random()-0.5) * 180;
+        const c = palette[i % palette.length];
+        colors[i*3] = c[0]; colors[i*3+1] = c[1]; colors[i*3+2] = c[2];
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      const mat = new THREE.PointsMaterial({ size:1.4, vertexColors:true, transparent:true, opacity:0.75, sizeAttenuation:true });
+      const points = new THREE.Points(geo, mat);
+      scene.add(points);
+
+      window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth/window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+
+      let tx = 0, ty = 0;
+      function animate(){
+        tx += (mx - tx) * 0.03;
+        ty += (my - ty) * 0.03;
+        points.rotation.y += 0.0009;
+        points.rotation.x += 0.0003;
+        camera.position.x = tx * 14;
+        camera.position.y = -ty * 10;
+        camera.lookAt(scene.position);
+        renderer.render(scene, camera);
+        if(!reduceMotion) requestAnimationFrame(animate);
+      }
+      animate();
+      return;
+    }
+
+    /* fallback: simple 2D depth-parallax starfield if three.js fails to load */
+    const ctx = canvas.getContext('2d');
+    let w, h, tx = 0, ty = 0;
+    function resize(){ w = canvas.width = window.innerWidth; h = canvas.height = window.innerHeight; }
+    resize();
+    window.addEventListener('resize', resize);
+    const stars = [];
+    for(let layer = 0; layer < 3; layer++){
+      const count = 40 + layer * 25;
+      for(let i = 0; i < count; i++){
+        stars.push({ x:Math.random(), y:Math.random(), layer, r:0.6+layer*0.5,
+          c:["0,194,203","255,61,120","255,178,56"][(layer+i)%3] });
+      }
+    }
+    function draw(){
+      tx += (mx - tx) * 0.04;
+      ty += (my - ty) * 0.04;
+      ctx.clearRect(0,0,w,h);
+      stars.forEach(s => {
+        const depth = (s.layer + 1) * 14;
+        const px = s.x * w + tx * depth * 6;
+        const py = s.y * h + ty * depth * 6;
+        ctx.beginPath();
+        ctx.arc(px, py, s.r * (s.layer + 1), 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${s.c},${0.15 + s.layer * 0.12})`;
+        ctx.fill();
+      });
+      if(!reduceMotion) requestAnimationFrame(draw);
+    }
+    draw();
+  })();
+
+  /* -------------------- PWA: installable when hosted over http/https -------------------- */
+  (function(){
+    if(!location.protocol.startsWith('http')) return; // manifest/SW need a real server, not file://
+    try{
+      const manifest = {
+        name:"Bs111 G-Store", short_name:"G-Store", start_url:location.href,
+        display:"standalone", background_color:"#0a0c11", theme_color:"#00c2cb",
+        icons:[{ src:"data:image/svg+xml;utf8," + encodeURIComponent("<svg xmlns='http://www.w3.org/2000/svg' width='512' height='512'><rect width='100%' height='100%' fill='%230a0c11'/><text x='50%' y='58%' font-size='300' text-anchor='middle' fill='%2300c2cb' font-family='Arial' font-weight='bold'>G</text></svg>"), sizes:"512x512", type:"image/svg+xml" }]
+      };
+      const manifestBlob = new Blob([JSON.stringify(manifest)], { type:"application/json" });
+      const link = document.createElement('link');
+      link.rel = 'manifest';
+      link.href = URL.createObjectURL(manifestBlob);
+      document.head.appendChild(link);
+
+      const swCode = "self.addEventListener('fetch', () => {});";
+      const swBlob = new Blob([swCode], { type:"text/javascript" });
+      if('serviceWorker' in navigator){
+        navigator.serviceWorker.register(URL.createObjectURL(swBlob)).catch(() => {});
+      }
+    }catch(e){}
+
+    const installBtn = document.getElementById('installBtn');
+    let deferredPrompt = null;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      installBtn.style.display = 'flex';
+    });
+    installBtn.addEventListener('click', async () => {
+      if(!deferredPrompt) return;
+      deferredPrompt.prompt();
+      await deferredPrompt.userChoice;
+      deferredPrompt = null;
+      installBtn.style.display = 'none';
+    });
+    window.addEventListener('appinstalled', () => { installBtn.style.display = 'none'; });
+  })();
+</script>
+
+</body>
+
+</html>
